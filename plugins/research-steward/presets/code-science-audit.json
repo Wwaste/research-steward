@@ -1,0 +1,53 @@
+{
+  "preset_id": "code-science-audit",
+  "preset_version": "1.0.0",
+  "title": "Code and science audit",
+  "description": "A code reviewer and a science reviewer examine the packet from their own angles, then an adjudicator reconciles the two reports.",
+  "mode": "open",
+  "limits": {
+    "max_parallel": 2,
+    "max_wall_time_ms": 1800000,
+    "max_prompt_chars": 150000,
+    "max_output_chars": 60000,
+    "retry_limit": 1,
+    "max_failures": 3
+  },
+  "nodes": [
+    {
+      "id": "code-reviewer",
+      "actor_id": "audit-code-reviewer",
+      "role": "code reviewer",
+      "brief": "Review the code in packet {{packet_id}} for correctness, reproducibility, and hidden assumptions that could change the scientific results.",
+      "adapter": "fake",
+      "depends_on": [],
+      "visibility": "shared",
+      "can_adjudicate": false,
+      "timeout_ms": 300000
+    },
+    {
+      "id": "science-reviewer",
+      "actor_id": "audit-science-reviewer",
+      "role": "science reviewer",
+      "brief": "Review the scientific reasoning in packet {{packet_id}}: whether the methods answer the question, the analysis matches the design, and the conclusions stay within the evidence.",
+      "adapter": "fake",
+      "depends_on": [],
+      "visibility": "shared",
+      "can_adjudicate": false,
+      "timeout_ms": 300000
+    },
+    {
+      "id": "adjudicator",
+      "actor_id": "audit-adjudicator",
+      "role": "adjudicator",
+      "brief": "Adjudicate the code review and the science review for packet {{packet_id}} together, resolve any conflicts between them, and record a disposition with rationale for each finding.",
+      "adapter": "fake",
+      "depends_on": [
+        "code-reviewer",
+        "science-reviewer"
+      ],
+      "visibility": "shared",
+      "can_adjudicate": true,
+      "timeout_ms": 600000
+    }
+  ]
+}

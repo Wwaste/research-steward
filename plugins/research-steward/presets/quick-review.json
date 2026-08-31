@@ -1,0 +1,41 @@
+{
+  "preset_id": "quick-review",
+  "preset_version": "1.0.0",
+  "title": "Quick review",
+  "description": "One reviewer reads the frozen packet, one adjudicator turns the findings into dispositions. The fastest complete loop.",
+  "mode": "open",
+  "limits": {
+    "max_parallel": 2,
+    "max_wall_time_ms": 900000,
+    "max_prompt_chars": 120000,
+    "max_output_chars": 60000,
+    "retry_limit": 1,
+    "max_failures": 2
+  },
+  "nodes": [
+    {
+      "id": "reviewer",
+      "actor_id": "quick-reviewer",
+      "role": "reviewer",
+      "brief": "Review the frozen packet {{packet_id}} end to end. Judge whether every claim is supported by the evidence inside the packet, report concrete findings with severity and evidence locators, and say plainly what you could not verify.",
+      "adapter": "fake",
+      "depends_on": [],
+      "visibility": "shared",
+      "can_adjudicate": false,
+      "timeout_ms": 300000
+    },
+    {
+      "id": "adjudicator",
+      "actor_id": "quick-adjudicator",
+      "role": "adjudicator",
+      "brief": "Read the reviewer's committed findings on packet {{packet_id}}, decide a disposition for each one, and give a rationale every time. Do not introduce new claims of your own.",
+      "adapter": "fake",
+      "depends_on": [
+        "reviewer"
+      ],
+      "visibility": "shared",
+      "can_adjudicate": true,
+      "timeout_ms": 600000
+    }
+  ]
+}

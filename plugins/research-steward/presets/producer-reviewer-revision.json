@@ -1,0 +1,55 @@
+{
+  "preset_id": "producer-reviewer-revision",
+  "preset_version": "1.0.0",
+  "title": "Producer, reviewer, revision",
+  "description": "A strictly sequential chain: the producer drafts, the reviewer critiques, and the reviser addresses every finding in a revised draft.",
+  "mode": "open",
+  "limits": {
+    "max_parallel": 1,
+    "max_wall_time_ms": 1800000,
+    "max_prompt_chars": 120000,
+    "max_output_chars": 60000,
+    "retry_limit": 1,
+    "max_failures": 3
+  },
+  "nodes": [
+    {
+      "id": "producer",
+      "actor_id": "chain-producer",
+      "role": "producer",
+      "brief": "Draft the deliverable for packet {{packet_id}} following the packet brief. Make your assumptions explicit and cite packet evidence for each claim.",
+      "adapter": "fake",
+      "depends_on": [],
+      "visibility": "shared",
+      "can_adjudicate": false,
+      "timeout_ms": 600000
+    },
+    {
+      "id": "reviewer",
+      "actor_id": "chain-reviewer",
+      "role": "reviewer",
+      "brief": "Review the producer's draft for packet {{packet_id}}. List concrete, actionable findings with severity, and keep matters of correctness separate from matters of style.",
+      "adapter": "fake",
+      "depends_on": [
+        "producer"
+      ],
+      "visibility": "shared",
+      "can_adjudicate": false,
+      "timeout_ms": 300000
+    },
+    {
+      "id": "reviser",
+      "actor_id": "chain-reviser",
+      "role": "reviser",
+      "brief": "Revise the draft for packet {{packet_id}} using the reviewer's findings. Address every finding explicitly: either fix it, or explain why the draft should stand as it is.",
+      "adapter": "fake",
+      "depends_on": [
+        "producer",
+        "reviewer"
+      ],
+      "visibility": "shared",
+      "can_adjudicate": false,
+      "timeout_ms": 600000
+    }
+  ]
+}

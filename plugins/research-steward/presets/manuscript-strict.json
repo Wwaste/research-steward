@@ -1,0 +1,99 @@
+{
+  "preset_id": "manuscript-strict",
+  "preset_version": "1.0.0",
+  "title": "Manuscript strict",
+  "description": "The heavyweight manuscript pipeline: a producer, three mutually blind reviewers, a statistics reviewer, and a closing adjudicator.",
+  "mode": "mixed",
+  "limits": {
+    "max_parallel": 4,
+    "max_wall_time_ms": 3600000,
+    "max_prompt_chars": 200000,
+    "max_output_chars": 80000,
+    "retry_limit": 1,
+    "max_failures": 4
+  },
+  "nodes": [
+    {
+      "id": "producer",
+      "actor_id": "manuscript-producer",
+      "role": "producer",
+      "brief": "Prepare the manuscript deliverable for packet {{packet_id}} following the packet brief, attaching evidence to every substantive claim.",
+      "adapter": "fake",
+      "depends_on": [],
+      "visibility": "shared",
+      "can_adjudicate": false,
+      "timeout_ms": 600000
+    },
+    {
+      "id": "blind-reviewer-1",
+      "actor_id": "manuscript-blind-reviewer-1",
+      "role": "blind reviewer",
+      "brief": "You are one of three independent blind reviewers of the manuscript for packet {{packet_id}}. Judge soundness, framing, and evidence support strictly from the packet, without seeing any other review, and report findings with severity.",
+      "adapter": "fake",
+      "depends_on": [
+        "producer"
+      ],
+      "visibility": "blind",
+      "blind_group": "manuscript-blind",
+      "can_adjudicate": false,
+      "timeout_ms": 300000
+    },
+    {
+      "id": "blind-reviewer-2",
+      "actor_id": "manuscript-blind-reviewer-2",
+      "role": "blind reviewer",
+      "brief": "You are one of three independent blind reviewers of the manuscript for packet {{packet_id}}. Judge soundness, framing, and evidence support strictly from the packet, without seeing any other review, and report findings with severity.",
+      "adapter": "fake",
+      "depends_on": [
+        "producer"
+      ],
+      "visibility": "blind",
+      "blind_group": "manuscript-blind",
+      "can_adjudicate": false,
+      "timeout_ms": 300000
+    },
+    {
+      "id": "blind-reviewer-3",
+      "actor_id": "manuscript-blind-reviewer-3",
+      "role": "blind reviewer",
+      "brief": "You are one of three independent blind reviewers of the manuscript for packet {{packet_id}}. Judge soundness, framing, and evidence support strictly from the packet, without seeing any other review, and report findings with severity.",
+      "adapter": "fake",
+      "depends_on": [
+        "producer"
+      ],
+      "visibility": "blind",
+      "blind_group": "manuscript-blind",
+      "can_adjudicate": false,
+      "timeout_ms": 300000
+    },
+    {
+      "id": "statistics-reviewer",
+      "actor_id": "manuscript-statistics-reviewer",
+      "role": "statistics reviewer",
+      "brief": "Audit the statistical reporting of the manuscript for packet {{packet_id}}: tests, sample sizes, replicates, corrections, and whether the numbers actually support the stated claims.",
+      "adapter": "fake",
+      "depends_on": [
+        "producer"
+      ],
+      "visibility": "shared",
+      "can_adjudicate": false,
+      "timeout_ms": 300000
+    },
+    {
+      "id": "adjudicator",
+      "actor_id": "manuscript-adjudicator",
+      "role": "adjudicator",
+      "brief": "All three blind reviews and the statistics audit for packet {{packet_id}} are committed. Adjudicate every finding with a disposition and rationale, and state the conditions for acceptance.",
+      "adapter": "fake",
+      "depends_on": [
+        "blind-reviewer-1",
+        "blind-reviewer-2",
+        "blind-reviewer-3",
+        "statistics-reviewer"
+      ],
+      "visibility": "shared",
+      "can_adjudicate": true,
+      "timeout_ms": 600000
+    }
+  ]
+}

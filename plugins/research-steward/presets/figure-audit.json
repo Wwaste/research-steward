@@ -1,0 +1,53 @@
+{
+  "preset_id": "figure-audit",
+  "preset_version": "1.0.0",
+  "title": "Figure audit",
+  "description": "A figure reviewer checks visual honesty, a provenance reviewer traces every figure to its source data, and an adjudicator settles the findings.",
+  "mode": "open",
+  "limits": {
+    "max_parallel": 2,
+    "max_wall_time_ms": 1200000,
+    "max_prompt_chars": 120000,
+    "max_output_chars": 60000,
+    "retry_limit": 1,
+    "max_failures": 3
+  },
+  "nodes": [
+    {
+      "id": "figure-reviewer",
+      "actor_id": "figure-audit-reviewer",
+      "role": "figure reviewer",
+      "brief": "Audit the figures in packet {{packet_id}} for accuracy and honesty: axes, scales, error bars, image processing, and whether each figure supports the claim its caption makes.",
+      "adapter": "fake",
+      "depends_on": [],
+      "visibility": "shared",
+      "can_adjudicate": false,
+      "timeout_ms": 300000
+    },
+    {
+      "id": "provenance-reviewer",
+      "actor_id": "figure-provenance-reviewer",
+      "role": "provenance reviewer",
+      "brief": "Trace the provenance of every figure in packet {{packet_id}}: source data, generation scripts, and processing steps. Flag any figure whose origin cannot be established from the packet.",
+      "adapter": "fake",
+      "depends_on": [],
+      "visibility": "shared",
+      "can_adjudicate": false,
+      "timeout_ms": 300000
+    },
+    {
+      "id": "adjudicator",
+      "actor_id": "figure-adjudicator",
+      "role": "adjudicator",
+      "brief": "Combine the figure audit and the provenance audit for packet {{packet_id}}, adjudicate each finding with a disposition and rationale, and list the figures that block acceptance.",
+      "adapter": "fake",
+      "depends_on": [
+        "figure-reviewer",
+        "provenance-reviewer"
+      ],
+      "visibility": "shared",
+      "can_adjudicate": true,
+      "timeout_ms": 600000
+    }
+  ]
+}

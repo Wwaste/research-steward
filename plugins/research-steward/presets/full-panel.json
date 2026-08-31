@@ -1,0 +1,84 @@
+{
+  "preset_id": "full-panel",
+  "preset_version": "1.0.0",
+  "title": "Full panel",
+  "description": "A producer drafts the deliverable, a methods reviewer and two blind panel reviewers assess it, and an adjudicator closes the loop.",
+  "mode": "mixed",
+  "limits": {
+    "max_parallel": 3,
+    "max_wall_time_ms": 2700000,
+    "max_prompt_chars": 150000,
+    "max_output_chars": 60000,
+    "retry_limit": 1,
+    "max_failures": 4
+  },
+  "nodes": [
+    {
+      "id": "producer",
+      "actor_id": "panel-producer",
+      "role": "producer",
+      "brief": "Produce the primary deliverable for packet {{packet_id}} as described in the packet brief. State your assumptions explicitly and attach evidence for every substantive claim.",
+      "adapter": "fake",
+      "depends_on": [],
+      "visibility": "shared",
+      "can_adjudicate": false,
+      "timeout_ms": 600000
+    },
+    {
+      "id": "methods-reviewer",
+      "actor_id": "panel-methods-reviewer",
+      "role": "methods reviewer",
+      "brief": "Review the methodology behind the producer's contribution for packet {{packet_id}}: design, controls, statistics, and reproducibility. Report findings with severity and evidence.",
+      "adapter": "fake",
+      "depends_on": [
+        "producer"
+      ],
+      "visibility": "shared",
+      "can_adjudicate": false,
+      "timeout_ms": 300000
+    },
+    {
+      "id": "blind-reviewer-1",
+      "actor_id": "panel-blind-reviewer-1",
+      "role": "blind reviewer",
+      "brief": "You are one of two independent blind reviewers on the panel for packet {{packet_id}}. Assess the producer's contribution on its own merits, without seeing any other review, and report findings with severity and evidence.",
+      "adapter": "fake",
+      "depends_on": [
+        "producer"
+      ],
+      "visibility": "blind",
+      "blind_group": "panel-blind",
+      "can_adjudicate": false,
+      "timeout_ms": 300000
+    },
+    {
+      "id": "blind-reviewer-2",
+      "actor_id": "panel-blind-reviewer-2",
+      "role": "blind reviewer",
+      "brief": "You are one of two independent blind reviewers on the panel for packet {{packet_id}}. Assess the producer's contribution on its own merits, without seeing any other review, and report findings with severity and evidence.",
+      "adapter": "fake",
+      "depends_on": [
+        "producer"
+      ],
+      "visibility": "blind",
+      "blind_group": "panel-blind",
+      "can_adjudicate": false,
+      "timeout_ms": 300000
+    },
+    {
+      "id": "adjudicator",
+      "actor_id": "panel-adjudicator",
+      "role": "adjudicator",
+      "brief": "With the methods review and both blind panel reviews of packet {{packet_id}} committed, adjudicate every finding, record dispositions with rationales, and summarize what must change before acceptance.",
+      "adapter": "fake",
+      "depends_on": [
+        "methods-reviewer",
+        "blind-reviewer-1",
+        "blind-reviewer-2"
+      ],
+      "visibility": "shared",
+      "can_adjudicate": true,
+      "timeout_ms": 600000
+    }
+  ]
+}

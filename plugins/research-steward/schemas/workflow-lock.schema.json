@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Research Steward workflow lock",
+  "description": "Hand-written mirror of WorkflowLockSchema in src/planner.ts; tests/planner.test.ts asserts the two stay consistent.",
+  "type": "object",
+  "properties": {
+    "lock_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "plan_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "preset_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "preset_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "generator_version": {
+      "type": "string",
+      "const": "planner/0.2.0"
+    },
+    "packet_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "provider_routes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "adapter": {
+            "type": "string",
+            "enum": [
+              "kimi",
+              "qoder",
+              "grok",
+              "fake"
+            ]
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "route": {
+            "type": "string",
+            "enum": [
+              "subscription_cli",
+              "fake"
+            ]
+          }
+        },
+        "required": [
+          "adapter",
+          "route"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "skill_ids": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      }
+    },
+    "capability_gaps": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000
+      }
+    }
+  },
+  "required": [
+    "lock_version",
+    "created_at",
+    "plan_hash",
+    "preset_id",
+    "preset_version",
+    "generator_version",
+    "packet_id",
+    "provider_routes",
+    "skill_ids",
+    "capability_gaps"
+  ],
+  "additionalProperties": false
+}
