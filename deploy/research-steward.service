@@ -1,7 +1,7 @@
 [Unit]
 Description=Research Steward private MCP service
-After=network-online.target tailscaled.service
-Wants=network-online.target tailscaled.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple

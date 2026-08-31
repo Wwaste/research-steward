@@ -7,7 +7,7 @@ Phase 2 adds a stable domain only after the private Tailscale deployment is heal
 Do not start external configuration until all of these are true:
 
 - the same immutable release has passed local tests, MCP smoke checks, and the deployed endpoint probe;
-- the service has survived a VPS reboot and still binds only to loopback;
+- the service has survived a VPS reboot and still binds only to loopback or one exact private tailnet address, never a public or wildcard address;
 - the project-data backup and release rollback paths have been exercised;
 - the intended domain, Cloudflare zone, permitted identities, and notification owner are explicitly chosen;
 - a separate hostname is available for the MCP write endpoint;
@@ -30,7 +30,7 @@ Use separate hostnames and policies for different trust surfaces:
 
 - a public or broadly shared documentation/status site is read-only and has no MCP write route;
 - the MCP hostname is protected by Cloudflare Access and the Research Steward bearer token;
-- origin services remain bound to loopback and are not opened on a public VPS interface.
+- the Cloudflare origin route terminates at a loopback proxy and is not opened on a public VPS interface; an exact-address Tailscale recovery endpoint may remain available only inside the tailnet and is never reused as the public origin.
 
 Cloudflare Access authenticates a person or service identity. The Research Steward bearer token authenticates the coordinator endpoint. Neither mechanism turns actor IDs inside research events into cryptographic identities, so mutually untrusted tenants must not share one ledger endpoint.
 

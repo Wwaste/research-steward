@@ -12,12 +12,14 @@ Research Steward treats prompts, model output, project files, and MCP clients as
 - Atomic writes in the destination directory and immutable committed events.
 - Explicit allowlist for environment variables forwarded to provider CLIs.
 - Local MCP uses stdio. HTTP mode requires a bearer secret and explicit host/origin allowlists.
-- HTTP binds to loopback unless an operator deliberately supplies a private interface.
+- HTTP binds to loopback unless an operator deliberately supplies one exact private-interface address. Never use a wildcard bind for remote mode; verify the listener matrix and public-interface refusal again after a cold boot.
 - Packaging creates and verifies a local archive only; v0.1 has no upload or delivery API.
 
 ## Identity and visibility limits
 
 The HTTP bearer authenticates one coordinator endpoint. It does not cryptographically bind a request to the `actor.id` stored in an event. Actor IDs are attributable protocol claims within a trusted team, not participant credentials.
+
+Direct HTTP on an exact Tailscale address relies on the tailnet's WireGuard transport, membership, and access policy; it does not add application-layer TLS. Keep the bearer requirement, host allowlist, exact-address bind, firewall checks, and public-interface refusal. A successful probe from one tailnet peer proves that peer's route, not the full control-plane ACL policy, which must be reviewed separately.
 
 Likewise, `blind` and `private` are enforced at provider prompt construction, shared materialized views, and MCP event listing. The coordinator process and the operating-system account can still read the authoritative ledger. Remote HTTP mode is therefore not a safe multi-tenant service for mutually untrusted participants.
 

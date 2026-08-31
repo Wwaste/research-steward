@@ -1,0 +1,6 @@
+# Optional systemd drop-in for a service that binds an exact Tailscale address.
+# Verify this unit exists on the target host before installing the drop-in:
+#   systemctl cat tailscale-wait-online.service
+[Unit]
+Wants=tailscale-wait-online.service
+After=tailscale-wait-online.service
