@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  validate:
+  source-tests:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -23,8 +23,27 @@ jobs:
           cache-dependency-path: plugins/research-steward/package-lock.json
       - run: npm ci
       - run: npm run check
-      - run: git diff --exit-code -- dist schemas
+      - run: npm run test:coverage
       - run: npm audit --audit-level=moderate
-      - run: node scripts/smoke-mcp.mjs
+  distribution:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plugins/research-steward
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: plugins/research-steward/package-lock.json
+      - run: npm ci
+      - name: rebuild-bundles
+        run: npm run build
+      - name: bundle-identity
+        run: git diff --exit-code -- dist schemas
+      - name: installed-smoke
+        run: node scripts/smoke-installed-plugin.mjs
       - run: node scripts/smoke-client-roots.mjs
+      - run: node scripts/smoke-mcp.mjs
       - run: node scripts/smoke-http.mjs

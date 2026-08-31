@@ -40,7 +40,7 @@ The sibling-skill structure follows Agent Skills discovery semantics: the umbrel
 Node.js 20 or newer is required. The repository commits standalone bundles, so normal plugin use does not require a global TypeScript toolchain.
 
 ```bash
-codex plugin marketplace add Wwaste/research-steward --ref main
+codex plugin marketplace add Wwaste/research-steward --ref v0.1.0
 codex plugin add research-steward@research-steward
 ```
 
@@ -182,7 +182,7 @@ Do not deploy remote MCP merely to reach files that still exist only on one lapt
 
 ## Status
 
-v0.1.0 release candidate. Protocol schemas are versioned, but the public API may still change before v1.0. Large prompt-only code reviews are a known weak fit for heavyweight terminal-agent CLIs; use focused frozen packets and deterministic tests instead of treating a model review as a release gate.
+v0.1.0 released. Protocol schemas are versioned, but the public API may still change before v1.0. Large prompt-only code reviews are a known weak fit for heavyweight terminal-agent CLIs; use focused frozen packets and deterministic tests instead of treating a model review as a release gate.
 
 Cloudflare domain, Access, and Tunnel integration are a planned second phase after private Tailscale deployment is stable. No DNS or Cloudflare account changes are required for the first release.
 
