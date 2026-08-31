@@ -424,3 +424,40 @@ describe("property: seeded random legal overrides preserve structural invariants
     }
   });
 });
+
+describe("planner wiring-batch additions", () => {
+  it("rejects out-of-range limits overrides at input parsing", () => {
+    expect(() =>
+      buildPlan({
+        preset_id: "quick-review",
+        packet_id: "limits-check",
+        overrides: { limits: { max_parallel: 9 } }
+      })
+    ).toThrowError(expect.objectContaining({ code: "INVALID_PLANNER_INPUT" }));
+    expect(() =>
+      buildPlan({
+        preset_id: "quick-review",
+        packet_id: "limits-check",
+        overrides: { limits: { retry_limit: 3 } }
+      })
+    ).toThrowError(expect.objectContaining({ code: "INVALID_PLANNER_INPUT" }));
+  });
+
+  it("rejects packet IDs that violate the packet pattern", () => {
+    for (const bad of ["UPPER", "under_score", "-leading"]) {
+      expect(() =>
+        buildPlan({ preset_id: "quick-review", packet_id: bad })
+      ).toThrowError(expect.objectContaining({ code: "INVALID_PLANNER_INPUT" }));
+    }
+  });
+
+  it("rejects a mixed-mode override on a preset without blind nodes", () => {
+    expect(() =>
+      buildPlan({
+        preset_id: "quick-review",
+        packet_id: "mixed-check",
+        overrides: { mode: "mixed" }
+      })
+    ).toThrowError(expect.objectContaining({ code: "MIXED_MODE_VISIBILITY_REQUIRED" }));
+  });
+});

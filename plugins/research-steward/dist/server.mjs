@@ -15350,11 +15350,11 @@ var require_mime_types = __commonJS({
       }
       return exts[0];
     }
-    function lookup(path8) {
-      if (!path8 || typeof path8 !== "string") {
+    function lookup(path9) {
+      if (!path9 || typeof path9 !== "string") {
         return false;
       }
-      var extension2 = extname("x." + path8).toLowerCase().slice(1);
+      var extension2 = extname("x." + path9).toLowerCase().slice(1);
       if (!extension2) {
         return false;
       }
@@ -19041,13 +19041,13 @@ var require_view = __commonJS({
   "node_modules/express/lib/view.js"(exports, module) {
     "use strict";
     var debug = require_src()("express:view");
-    var path8 = __require("node:path");
+    var path9 = __require("node:path");
     var fs = __require("node:fs");
-    var dirname = path8.dirname;
-    var basename = path8.basename;
-    var extname = path8.extname;
-    var join = path8.join;
-    var resolve = path8.resolve;
+    var dirname = path9.dirname;
+    var basename = path9.basename;
+    var extname = path9.extname;
+    var join = path9.join;
+    var resolve = path9.resolve;
     module.exports = View;
     function View(name, options) {
       var opts = options || {};
@@ -19076,17 +19076,17 @@ var require_view = __commonJS({
       this.path = this.lookup(fileName);
     }
     View.prototype.lookup = function lookup(name) {
-      var path9;
+      var path10;
       var roots = [].concat(this.root);
       debug('lookup "%s"', name);
-      for (var i = 0; i < roots.length && !path9; i++) {
+      for (var i = 0; i < roots.length && !path10; i++) {
         var root = roots[i];
         var loc = resolve(root, name);
         var dir = dirname(loc);
         var file2 = basename(loc);
-        path9 = this.resolve(dir, file2);
+        path10 = this.resolve(dir, file2);
       }
-      return path9;
+      return path10;
     };
     View.prototype.render = function render(options, callback) {
       var sync = true;
@@ -19108,21 +19108,21 @@ var require_view = __commonJS({
     };
     View.prototype.resolve = function resolve2(dir, file2) {
       var ext = this.ext;
-      var path9 = join(dir, file2);
-      var stat5 = tryStat(path9);
-      if (stat5 && stat5.isFile()) {
-        return path9;
+      var path10 = join(dir, file2);
+      var stat6 = tryStat(path10);
+      if (stat6 && stat6.isFile()) {
+        return path10;
       }
-      path9 = join(dir, basename(file2, ext), "index" + ext);
-      stat5 = tryStat(path9);
-      if (stat5 && stat5.isFile()) {
-        return path9;
+      path10 = join(dir, basename(file2, ext), "index" + ext);
+      stat6 = tryStat(path10);
+      if (stat6 && stat6.isFile()) {
+        return path10;
       }
     };
-    function tryStat(path9) {
-      debug('stat "%s"', path9);
+    function tryStat(path10) {
+      debug('stat "%s"', path10);
       try {
-        return fs.statSync(path9);
+        return fs.statSync(path10);
       } catch (e) {
         return void 0;
       }
@@ -19268,9 +19268,9 @@ var require_etag = __commonJS({
       }
       return obj && typeof obj === "object" && "ctime" in obj && toString.call(obj.ctime) === "[object Date]" && "mtime" in obj && toString.call(obj.mtime) === "[object Date]" && "ino" in obj && typeof obj.ino === "number" && "size" in obj && typeof obj.size === "number";
     }
-    function stattag(stat5) {
-      var mtime = stat5.mtime.getTime().toString(16);
-      var size = stat5.size.toString(16);
+    function stattag(stat6) {
+      var mtime = stat6.mtime.getTime().toString(16);
+      var size = stat6.size.toString(16);
       return '"' + size + "-" + mtime + '"';
     }
   }
@@ -20361,15 +20361,15 @@ var require_dist3 = __commonJS({
       let index = 0;
       function consumeUntil(end) {
         const output2 = [];
-        let path8 = "";
+        let path9 = "";
         function writePath() {
-          if (!path8)
+          if (!path9)
             return;
           output2.push({
             type: "text",
-            value: encodePath(path8)
+            value: encodePath(path9)
           });
-          path8 = "";
+          path9 = "";
         }
         while (index < chars.length) {
           const value = chars[index++];
@@ -20381,7 +20381,7 @@ var require_dist3 = __commonJS({
             if (index === chars.length) {
               throw new PathError(`Unexpected end after \\ at index ${index}`, str);
             }
-            path8 += chars[index++];
+            path9 += chars[index++];
             continue;
           }
           if (value === ":" || value === "*") {
@@ -20425,7 +20425,7 @@ var require_dist3 = __commonJS({
           if (value === "}" || value === "(" || value === ")" || value === "[" || value === "]" || value === "+" || value === "?" || value === "!") {
             throw new PathError(`Unexpected ${value} at index ${index - 1}`, str);
           }
-          path8 += value;
+          path9 += value;
         }
         if (end) {
           throw new PathError(`Unexpected end at index ${index}, expected ${end}`, str);
@@ -20435,17 +20435,17 @@ var require_dist3 = __commonJS({
       }
       return new TokenData(consumeUntil(""), str);
     }
-    function compile2(path8, options = {}) {
+    function compile2(path9, options = {}) {
       const { encode: encode3 = encodeURIComponent, delimiter = DEFAULT_DELIMITER } = options;
-      const data = typeof path8 === "object" ? path8 : parse3(path8, options);
+      const data = typeof path9 === "object" ? path9 : parse3(path9, options);
       const fn = tokensToFunction(data.tokens, delimiter, encode3);
-      return function path9(params = {}) {
+      return function path10(params = {}) {
         const missing = [];
-        const path10 = fn(params, missing);
+        const path11 = fn(params, missing);
         if (missing.length) {
           throw new TypeError(`Missing parameters: ${missing.join(", ")}`);
         }
-        return path10;
+        return path11;
       };
     }
     function tokensToFunction(tokens, delimiter, encode3) {
@@ -20507,9 +20507,9 @@ var require_dist3 = __commonJS({
         return encodeValue(value);
       };
     }
-    function match(path8, options = {}) {
+    function match(path9, options = {}) {
       const { decode: decode3 = decodeURIComponent, delimiter = DEFAULT_DELIMITER } = options;
-      const { regexp, keys } = pathToRegexp(path8, options);
+      const { regexp, keys } = pathToRegexp(path9, options);
       const decoders = keys.map((key) => {
         if (decode3 === false)
           return NOOP_VALUE;
@@ -20521,7 +20521,7 @@ var require_dist3 = __commonJS({
         const m = regexp.exec(input2);
         if (!m)
           return false;
-        const path9 = m[0];
+        const path10 = m[0];
         const params = /* @__PURE__ */ Object.create(null);
         for (let i = 1; i < m.length; i++) {
           if (m[i] === void 0)
@@ -20530,21 +20530,21 @@ var require_dist3 = __commonJS({
           const decoder = decoders[i - 1];
           params[key.name] = decoder(m[i]);
         }
-        return { path: path9, params };
+        return { path: path10, params };
       };
     }
-    function pathToRegexp(path8, options = {}) {
+    function pathToRegexp(path9, options = {}) {
       const { delimiter = DEFAULT_DELIMITER, end = true, sensitive = false, trailing = true } = options;
       const keys = [];
       let source = "";
       let combinations = 0;
-      function process4(path9) {
-        if (Array.isArray(path9)) {
-          for (const p of path9)
+      function process4(path10) {
+        if (Array.isArray(path10)) {
+          for (const p of path10)
             process4(p);
           return;
         }
-        const data = typeof path9 === "object" ? path9 : parse3(path9, options);
+        const data = typeof path10 === "object" ? path10 : parse3(path10, options);
         flatten(data.tokens, 0, [], (tokens) => {
           if (combinations >= 256) {
             throw new PathError("Too many path combinations", data.originalPath);
@@ -20555,7 +20555,7 @@ var require_dist3 = __commonJS({
           combinations++;
         });
       }
-      process4(path8);
+      process4(path9);
       let pattern = `^(?:${source})`;
       if (trailing)
         pattern += "(?:" + escape2(delimiter) + "$)?";
@@ -20695,18 +20695,18 @@ var require_layer = __commonJS({
     var TRAILING_SLASH_REGEXP = /\/+$/;
     var MATCHING_GROUP_REGEXP = /\((?:\?<(.*?)>)?(?!\?)/g;
     module.exports = Layer;
-    function Layer(path8, options, fn) {
+    function Layer(path9, options, fn) {
       if (!(this instanceof Layer)) {
-        return new Layer(path8, options, fn);
+        return new Layer(path9, options, fn);
       }
-      debug("new %o", path8);
+      debug("new %o", path9);
       const opts = options || {};
       this.handle = fn;
       this.keys = [];
       this.name = fn.name || "<anonymous>";
       this.params = void 0;
       this.path = void 0;
-      this.slash = path8 === "/" && opts.end === false;
+      this.slash = path9 === "/" && opts.end === false;
       function matcher(_path) {
         if (_path instanceof RegExp) {
           const keys = [];
@@ -20745,7 +20745,7 @@ var require_layer = __commonJS({
           decode: decodeParam
         });
       }
-      this.matchers = Array.isArray(path8) ? path8.map(matcher) : [matcher(path8)];
+      this.matchers = Array.isArray(path9) ? path9.map(matcher) : [matcher(path9)];
     }
     Layer.prototype.handleError = function handleError(error61, req, res, next) {
       const fn = this.handle;
@@ -20785,9 +20785,9 @@ var require_layer = __commonJS({
         next(err);
       }
     };
-    Layer.prototype.match = function match(path8) {
+    Layer.prototype.match = function match(path9) {
       let match2;
-      if (path8 != null) {
+      if (path9 != null) {
         if (this.slash) {
           this.params = {};
           this.path = "";
@@ -20795,7 +20795,7 @@ var require_layer = __commonJS({
         }
         let i = 0;
         while (!match2 && i < this.matchers.length) {
-          match2 = this.matchers[i](path8);
+          match2 = this.matchers[i](path9);
           i++;
         }
       }
@@ -20823,13 +20823,13 @@ var require_layer = __commonJS({
         throw err;
       }
     }
-    function loosen(path8) {
-      if (path8 instanceof RegExp || path8 === "/") {
-        return path8;
+    function loosen(path9) {
+      if (path9 instanceof RegExp || path9 === "/") {
+        return path9;
       }
-      return Array.isArray(path8) ? path8.map(function(p) {
+      return Array.isArray(path9) ? path9.map(function(p) {
         return loosen(p);
-      }) : String(path8).replace(TRAILING_SLASH_REGEXP, "");
+      }) : String(path9).replace(TRAILING_SLASH_REGEXP, "");
     }
   }
 });
@@ -20845,9 +20845,9 @@ var require_route = __commonJS({
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
     module.exports = Route;
-    function Route(path8) {
-      debug("new %o", path8);
-      this.path = path8;
+    function Route(path9) {
+      debug("new %o", path9);
+      this.path = path9;
       this.stack = [];
       this.methods = /* @__PURE__ */ Object.create(null);
     }
@@ -21055,8 +21055,8 @@ var require_router = __commonJS({
         if (++sync > 100) {
           return setImmediate(next, err);
         }
-        const path8 = getPathname(req);
-        if (path8 == null) {
+        const path9 = getPathname(req);
+        if (path9 == null) {
           return done(layerError);
         }
         let layer;
@@ -21064,7 +21064,7 @@ var require_router = __commonJS({
         let route;
         while (match !== true && idx < stack.length) {
           layer = stack[idx++];
-          match = matchLayer(layer, path8);
+          match = matchLayer(layer, path9);
           route = layer.route;
           if (typeof match !== "boolean") {
             layerError = layerError || match;
@@ -21102,18 +21102,18 @@ var require_router = __commonJS({
           } else if (route) {
             layer.handleRequest(req, res, next);
           } else {
-            trimPrefix(layer, layerError, layerPath, path8);
+            trimPrefix(layer, layerError, layerPath, path9);
           }
           sync = 0;
         });
       }
-      function trimPrefix(layer, layerError, layerPath, path8) {
+      function trimPrefix(layer, layerError, layerPath, path9) {
         if (layerPath.length !== 0) {
-          if (layerPath !== path8.substring(0, layerPath.length)) {
+          if (layerPath !== path9.substring(0, layerPath.length)) {
             next(layerError);
             return;
           }
-          const c = path8[layerPath.length];
+          const c = path9[layerPath.length];
           if (c && c !== "/") {
             next(layerError);
             return;
@@ -21137,7 +21137,7 @@ var require_router = __commonJS({
     };
     Router.prototype.use = function use(handler) {
       let offset = 0;
-      let path8 = "/";
+      let path9 = "/";
       if (typeof handler !== "function") {
         let arg = handler;
         while (Array.isArray(arg) && arg.length !== 0) {
@@ -21145,7 +21145,7 @@ var require_router = __commonJS({
         }
         if (typeof arg !== "function") {
           offset = 1;
-          path8 = handler;
+          path9 = handler;
         }
       }
       const callbacks = flatten.call(slice.call(arguments, offset), Infinity);
@@ -21157,8 +21157,8 @@ var require_router = __commonJS({
         if (typeof fn !== "function") {
           throw new TypeError("argument handler must be a function");
         }
-        debug("use %o %s", path8, fn.name || "<anonymous>");
-        const layer = new Layer(path8, {
+        debug("use %o %s", path9, fn.name || "<anonymous>");
+        const layer = new Layer(path9, {
           sensitive: this.caseSensitive,
           strict: false,
           end: false
@@ -21168,9 +21168,9 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router.prototype.route = function route(path8) {
-      const route2 = new Route(path8);
-      const layer = new Layer(path8, {
+    Router.prototype.route = function route(path9) {
+      const route2 = new Route(path9);
+      const layer = new Layer(path9, {
         sensitive: this.caseSensitive,
         strict: this.strict,
         end: true
@@ -21183,8 +21183,8 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router.prototype[method] = function(path8) {
-        const route = this.route(path8);
+      Router.prototype[method] = function(path9) {
+        const route = this.route(path9);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
       };
@@ -21213,9 +21213,9 @@ var require_router = __commonJS({
       const fqdnIndex = url2.substring(0, pathLength).indexOf("://");
       return fqdnIndex !== -1 ? url2.substring(0, url2.indexOf("/", 3 + fqdnIndex)) : void 0;
     }
-    function matchLayer(layer, path8) {
+    function matchLayer(layer, path9) {
       try {
-        return layer.match(path8);
+        return layer.match(path9);
       } catch (err) {
         return err;
       }
@@ -21443,7 +21443,7 @@ var require_application = __commonJS({
     };
     app.use = function use(fn) {
       var offset = 0;
-      var path8 = "/";
+      var path9 = "/";
       if (typeof fn !== "function") {
         var arg = fn;
         while (Array.isArray(arg) && arg.length !== 0) {
@@ -21451,7 +21451,7 @@ var require_application = __commonJS({
         }
         if (typeof arg !== "function") {
           offset = 1;
-          path8 = fn;
+          path9 = fn;
         }
       }
       var fns = flatten.call(slice.call(arguments, offset), Infinity);
@@ -21461,12 +21461,12 @@ var require_application = __commonJS({
       var router = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router.use(path8, fn2);
+          return router.use(path9, fn2);
         }
-        debug(".use app under %s", path8);
-        fn2.mountpath = path8;
+        debug(".use app under %s", path9);
+        fn2.mountpath = path9;
         fn2.parent = this;
-        router.use(path8, function mounted_app(req, res, next) {
+        router.use(path9, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -21478,8 +21478,8 @@ var require_application = __commonJS({
       }, this);
       return this;
     };
-    app.route = function route(path8) {
-      return this.router.route(path8);
+    app.route = function route(path9) {
+      return this.router.route(path9);
     };
     app.engine = function engine(ext, fn) {
       if (typeof fn !== "function") {
@@ -21522,7 +21522,7 @@ var require_application = __commonJS({
       }
       return this;
     };
-    app.path = function path8() {
+    app.path = function path9() {
       return this.parent ? this.parent.path() + this.mountpath : "";
     };
     app.enabled = function enabled(setting) {
@@ -21538,17 +21538,17 @@ var require_application = __commonJS({
       return this.set(setting, false);
     };
     methods.forEach(function(method) {
-      app[method] = function(path8) {
+      app[method] = function(path9) {
         if (method === "get" && arguments.length === 1) {
-          return this.set(path8);
+          return this.set(path9);
         }
-        var route = this.route(path8);
+        var route = this.route(path9);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
       };
     });
-    app.all = function all(path8) {
-      var route = this.route(path8);
+    app.all = function all(path9) {
+      var route = this.route(path9);
       var args = slice.call(arguments, 1);
       for (var i = 0; i < methods.length; i++) {
         route[methods[i]].apply(route, args);
@@ -22534,7 +22534,7 @@ var require_request = __commonJS({
       var subdomains2 = !isIP(hostname3) ? hostname3.split(".").reverse() : [hostname3];
       return subdomains2.slice(offset);
     });
-    defineGetter(req, "path", function path8() {
+    defineGetter(req, "path", function path9() {
       return parse3(this).pathname;
     });
     defineGetter(req, "host", function host() {
@@ -22745,8 +22745,8 @@ var require_content_disposition = __commonJS({
       this.type = type;
       this.parameters = parameters;
     }
-    function basename(path8) {
-      const normalized = path8.replaceAll("\\", "/");
+    function basename(path9) {
+      const normalized = path9.replaceAll("\\", "/");
       let end = normalized.length;
       while (end > 0 && normalized[end - 1] === "/") {
         end--;
@@ -22992,27 +22992,27 @@ var require_send = __commonJS({
     var ms = require_ms();
     var onFinished = require_on_finished();
     var parseRange = require_range_parser();
-    var path8 = __require("path");
+    var path9 = __require("path");
     var statuses = require_statuses();
     var Stream = __require("stream");
     var util2 = __require("util");
-    var extname = path8.extname;
-    var join = path8.join;
-    var normalize = path8.normalize;
-    var resolve = path8.resolve;
-    var sep = path8.sep;
+    var extname = path9.extname;
+    var join = path9.join;
+    var normalize = path9.normalize;
+    var resolve = path9.resolve;
+    var sep = path9.sep;
     var BYTES_RANGE_REGEXP = /^ *bytes=/;
     var MAX_MAXAGE = 60 * 60 * 24 * 365 * 1e3;
     var UP_PATH_REGEXP = /(?:^|[\\/])\.\.(?:[\\/]|$)/;
     module.exports = send;
-    function send(req, path9, options) {
-      return new SendStream(req, path9, options);
+    function send(req, path10, options) {
+      return new SendStream(req, path10, options);
     }
-    function SendStream(req, path9, options) {
+    function SendStream(req, path10, options) {
       Stream.call(this);
       var opts = options || {};
       this.options = opts;
-      this.path = path9;
+      this.path = path10;
       this.req = req;
       this._acceptRanges = opts.acceptRanges !== void 0 ? Boolean(opts.acceptRanges) : true;
       this._cacheControl = opts.cacheControl !== void 0 ? Boolean(opts.cacheControl) : true;
@@ -23126,10 +23126,10 @@ var require_send = __commonJS({
       var lastModified = this.res.getHeader("Last-Modified");
       return parseHttpDate(lastModified) <= parseHttpDate(ifRange);
     };
-    SendStream.prototype.redirect = function redirect2(path9) {
+    SendStream.prototype.redirect = function redirect2(path10) {
       var res = this.res;
       if (hasListeners(this, "directory")) {
-        this.emit("directory", res, path9);
+        this.emit("directory", res, path10);
         return;
       }
       if (this.hasTrailingSlash()) {
@@ -23149,38 +23149,38 @@ var require_send = __commonJS({
     SendStream.prototype.pipe = function pipe2(res) {
       var root = this._root;
       this.res = res;
-      var path9 = decode3(this.path);
-      if (path9 === -1) {
+      var path10 = decode3(this.path);
+      if (path10 === -1) {
         this.error(400);
         return res;
       }
-      if (~path9.indexOf("\0")) {
+      if (~path10.indexOf("\0")) {
         this.error(400);
         return res;
       }
       var parts;
       if (root !== null) {
-        if (path9) {
-          path9 = normalize("." + sep + path9);
+        if (path10) {
+          path10 = normalize("." + sep + path10);
         }
-        if (UP_PATH_REGEXP.test(path9)) {
-          debug('malicious path "%s"', path9);
+        if (UP_PATH_REGEXP.test(path10)) {
+          debug('malicious path "%s"', path10);
           this.error(403);
           return res;
         }
-        parts = path9.split(sep);
-        path9 = normalize(join(root, path9));
+        parts = path10.split(sep);
+        path10 = normalize(join(root, path10));
       } else {
-        if (UP_PATH_REGEXP.test(path9)) {
-          debug('malicious path "%s"', path9);
+        if (UP_PATH_REGEXP.test(path10)) {
+          debug('malicious path "%s"', path10);
           this.error(403);
           return res;
         }
-        parts = normalize(path9).split(sep);
-        path9 = resolve(path9);
+        parts = normalize(path10).split(sep);
+        path10 = resolve(path10);
       }
       if (containsDotFile(parts)) {
-        debug('%s dotfile "%s"', this._dotfiles, path9);
+        debug('%s dotfile "%s"', this._dotfiles, path10);
         switch (this._dotfiles) {
           case "allow":
             break;
@@ -23194,14 +23194,14 @@ var require_send = __commonJS({
         }
       }
       if (this._index.length && this.hasTrailingSlash()) {
-        this.sendIndex(path9);
+        this.sendIndex(path10);
         return res;
       }
-      this.sendFile(path9);
+      this.sendFile(path10);
       return res;
     };
-    SendStream.prototype.send = function send2(path9, stat5) {
-      var len = stat5.size;
+    SendStream.prototype.send = function send2(path10, stat6) {
+      var len = stat6.size;
       var options = this.options;
       var opts = {};
       var res = this.res;
@@ -23212,9 +23212,9 @@ var require_send = __commonJS({
         this.headersAlreadySent();
         return;
       }
-      debug('pipe "%s"', path9);
-      this.setHeader(path9, stat5);
-      this.type(path9);
+      debug('pipe "%s"', path10);
+      this.setHeader(path10, stat6);
+      this.type(path10);
       if (this.isConditionalGET()) {
         if (this.isPreconditionFailure()) {
           this.error(412);
@@ -23263,38 +23263,38 @@ var require_send = __commonJS({
         res.end();
         return;
       }
-      this.stream(path9, opts);
+      this.stream(path10, opts);
     };
-    SendStream.prototype.sendFile = function sendFile(path9) {
+    SendStream.prototype.sendFile = function sendFile(path10) {
       var i = 0;
       var self = this;
-      debug('stat "%s"', path9);
-      fs.stat(path9, function onstat(err, stat5) {
-        var pathEndsWithSep = path9[path9.length - 1] === sep;
-        if (err && err.code === "ENOENT" && !extname(path9) && !pathEndsWithSep) {
+      debug('stat "%s"', path10);
+      fs.stat(path10, function onstat(err, stat6) {
+        var pathEndsWithSep = path10[path10.length - 1] === sep;
+        if (err && err.code === "ENOENT" && !extname(path10) && !pathEndsWithSep) {
           return next(err);
         }
         if (err) return self.onStatError(err);
-        if (stat5.isDirectory()) return self.redirect(path9);
+        if (stat6.isDirectory()) return self.redirect(path10);
         if (pathEndsWithSep) return self.error(404);
-        self.emit("file", path9, stat5);
-        self.send(path9, stat5);
+        self.emit("file", path10, stat6);
+        self.send(path10, stat6);
       });
       function next(err) {
         if (self._extensions.length <= i) {
           return err ? self.onStatError(err) : self.error(404);
         }
-        var p = path9 + "." + self._extensions[i++];
+        var p = path10 + "." + self._extensions[i++];
         debug('stat "%s"', p);
-        fs.stat(p, function(err2, stat5) {
+        fs.stat(p, function(err2, stat6) {
           if (err2) return next(err2);
-          if (stat5.isDirectory()) return next();
-          self.emit("file", p, stat5);
-          self.send(p, stat5);
+          if (stat6.isDirectory()) return next();
+          self.emit("file", p, stat6);
+          self.send(p, stat6);
         });
       }
     };
-    SendStream.prototype.sendIndex = function sendIndex(path9) {
+    SendStream.prototype.sendIndex = function sendIndex(path10) {
       var i = -1;
       var self = this;
       function next(err) {
@@ -23302,21 +23302,21 @@ var require_send = __commonJS({
           if (err) return self.onStatError(err);
           return self.error(404);
         }
-        var p = join(path9, self._index[i]);
+        var p = join(path10, self._index[i]);
         debug('stat "%s"', p);
-        fs.stat(p, function(err2, stat5) {
+        fs.stat(p, function(err2, stat6) {
           if (err2) return next(err2);
-          if (stat5.isDirectory()) return next();
-          self.emit("file", p, stat5);
-          self.send(p, stat5);
+          if (stat6.isDirectory()) return next();
+          self.emit("file", p, stat6);
+          self.send(p, stat6);
         });
       }
       next();
     };
-    SendStream.prototype.stream = function stream(path9, options) {
+    SendStream.prototype.stream = function stream(path10, options) {
       var self = this;
       var res = this.res;
-      var stream2 = fs.createReadStream(path9, options);
+      var stream2 = fs.createReadStream(path10, options);
       this.emit("stream", stream2);
       stream2.pipe(res);
       function cleanup() {
@@ -23331,17 +23331,17 @@ var require_send = __commonJS({
         self.emit("end");
       });
     };
-    SendStream.prototype.type = function type(path9) {
+    SendStream.prototype.type = function type(path10) {
       var res = this.res;
       if (res.getHeader("Content-Type")) return;
-      var ext = extname(path9);
+      var ext = extname(path10);
       var type2 = mime.contentType(ext) || "application/octet-stream";
       debug("content-type %s", type2);
       res.setHeader("Content-Type", type2);
     };
-    SendStream.prototype.setHeader = function setHeader(path9, stat5) {
+    SendStream.prototype.setHeader = function setHeader(path10, stat6) {
       var res = this.res;
-      this.emit("headers", res, path9, stat5);
+      this.emit("headers", res, path10, stat6);
       if (this._acceptRanges && !res.getHeader("Accept-Ranges")) {
         debug("accept ranges");
         res.setHeader("Accept-Ranges", "bytes");
@@ -23355,12 +23355,12 @@ var require_send = __commonJS({
         res.setHeader("Cache-Control", cacheControl);
       }
       if (this._lastModified && !res.getHeader("Last-Modified")) {
-        var modified = stat5.mtime.toUTCString();
+        var modified = stat6.mtime.toUTCString();
         debug("modified %s", modified);
         res.setHeader("Last-Modified", modified);
       }
       if (this._etag && !res.getHeader("ETag")) {
-        var val = etag(stat5);
+        var val = etag(stat6);
         debug("etag %s", val);
         res.setHeader("ETag", val);
       }
@@ -23399,9 +23399,9 @@ var require_send = __commonJS({
       }
       return err instanceof Error ? createError(status, err, { expose: false }) : createError(status, err);
     }
-    function decode3(path9) {
+    function decode3(path10) {
       try {
-        return decodeURIComponent(path9);
+        return decodeURIComponent(path10);
       } catch (err) {
         return -1;
       }
@@ -23544,7 +23544,7 @@ var require_response = __commonJS({
     var http = __require("node:http");
     var onFinished = require_on_finished();
     var mime = require_mime_types();
-    var path8 = __require("node:path");
+    var path9 = __require("node:path");
     var pathIsAbsolute = __require("node:path").isAbsolute;
     var statuses = require_statuses();
     var sign = require_cookie_signature().sign;
@@ -23553,8 +23553,8 @@ var require_response = __commonJS({
     var setCharset = require_utils3().setCharset;
     var cookie = require_cookie();
     var send = require_send();
-    var extname = path8.extname;
-    var resolve = path8.resolve;
+    var extname = path9.extname;
+    var resolve = path9.resolve;
     var vary = require_vary();
     var res = Object.create(http.ServerResponse.prototype);
     module.exports = res;
@@ -23699,26 +23699,26 @@ var require_response = __commonJS({
       this.type("txt");
       return this.send(body);
     };
-    res.sendFile = function sendFile(path9, options, callback) {
+    res.sendFile = function sendFile(path10, options, callback) {
       var done = callback;
       var req = this.req;
       var res2 = this;
       var next = req.next;
       var opts = options || {};
-      if (!path9) {
+      if (!path10) {
         throw new TypeError("path argument is required to res.sendFile");
       }
-      if (typeof path9 !== "string") {
+      if (typeof path10 !== "string") {
         throw new TypeError("path must be a string to res.sendFile");
       }
       if (typeof options === "function") {
         done = options;
         opts = {};
       }
-      if (!opts.root && !pathIsAbsolute(path9)) {
+      if (!opts.root && !pathIsAbsolute(path10)) {
         throw new TypeError("path must be absolute or specify root to res.sendFile");
       }
-      var pathname = encodeURI(path9);
+      var pathname = encodeURI(path10);
       opts.etag = this.app.enabled("etag");
       var file2 = send(req, pathname, opts);
       sendfile(res2, file2, opts, function(err) {
@@ -23729,7 +23729,7 @@ var require_response = __commonJS({
         }
       });
     };
-    res.download = function download(path9, filename, options, callback) {
+    res.download = function download(path10, filename, options, callback) {
       var done = callback;
       var name = filename;
       var opts = options || null;
@@ -23746,7 +23746,7 @@ var require_response = __commonJS({
         opts = filename;
       }
       var headers = {
-        "Content-Disposition": contentDisposition(name || path9)
+        "Content-Disposition": contentDisposition(name || path10)
       };
       if (opts && opts.headers) {
         var keys = Object.keys(opts.headers);
@@ -23759,7 +23759,7 @@ var require_response = __commonJS({
       }
       opts = Object.create(opts);
       opts.headers = headers;
-      var fullPath = !opts.root ? resolve(path9) : path9;
+      var fullPath = !opts.root ? resolve(path10) : path10;
       return this.sendFile(fullPath, opts, done);
     };
     res.contentType = res.type = function contentType3(type) {
@@ -24033,11 +24033,11 @@ var require_serve_static = __commonJS({
         }
         var forwardError = !fallthrough;
         var originalUrl = parseUrl.original(req);
-        var path8 = parseUrl(req).pathname;
-        if (path8 === "/" && originalUrl.pathname.substr(-1) !== "/") {
-          path8 = "";
+        var path9 = parseUrl(req).pathname;
+        if (path9 === "/" && originalUrl.pathname.substr(-1) !== "/") {
+          path9 = "";
         }
-        var stream = send(req, path8, opts);
+        var stream = send(req, path9, opts);
         stream.on("directory", onDirectory);
         if (setHeaders) {
           stream.on("headers", setHeaders);
@@ -24521,11 +24521,11 @@ var require_codegen = __commonJS({
         const rhs = this.rhs === void 0 ? "" : ` = ${this.rhs}`;
         return `${varKind} ${this.name}${rhs};` + _n;
       }
-      optimizeNames(names, constants3) {
+      optimizeNames(names, constants4) {
         if (!names[this.name.str])
           return;
         if (this.rhs)
-          this.rhs = optimizeExpr(this.rhs, names, constants3);
+          this.rhs = optimizeExpr(this.rhs, names, constants4);
         return this;
       }
       get names() {
@@ -24542,10 +24542,10 @@ var require_codegen = __commonJS({
       render({ _n }) {
         return `${this.lhs} = ${this.rhs};` + _n;
       }
-      optimizeNames(names, constants3) {
+      optimizeNames(names, constants4) {
         if (this.lhs instanceof code_1.Name && !names[this.lhs.str] && !this.sideEffects)
           return;
-        this.rhs = optimizeExpr(this.rhs, names, constants3);
+        this.rhs = optimizeExpr(this.rhs, names, constants4);
         return this;
       }
       get names() {
@@ -24606,8 +24606,8 @@ var require_codegen = __commonJS({
       optimizeNodes() {
         return `${this.code}` ? this : void 0;
       }
-      optimizeNames(names, constants3) {
-        this.code = optimizeExpr(this.code, names, constants3);
+      optimizeNames(names, constants4) {
+        this.code = optimizeExpr(this.code, names, constants4);
         return this;
       }
       get names() {
@@ -24636,12 +24636,12 @@ var require_codegen = __commonJS({
         }
         return nodes.length > 0 ? this : void 0;
       }
-      optimizeNames(names, constants3) {
+      optimizeNames(names, constants4) {
         const { nodes } = this;
         let i = nodes.length;
         while (i--) {
           const n = nodes[i];
-          if (n.optimizeNames(names, constants3))
+          if (n.optimizeNames(names, constants4))
             continue;
           subtractNames(names, n.names);
           nodes.splice(i, 1);
@@ -24694,12 +24694,12 @@ var require_codegen = __commonJS({
           return void 0;
         return this;
       }
-      optimizeNames(names, constants3) {
+      optimizeNames(names, constants4) {
         var _a3;
-        this.else = (_a3 = this.else) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants3);
-        if (!(super.optimizeNames(names, constants3) || this.else))
+        this.else = (_a3 = this.else) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants4);
+        if (!(super.optimizeNames(names, constants4) || this.else))
           return;
-        this.condition = optimizeExpr(this.condition, names, constants3);
+        this.condition = optimizeExpr(this.condition, names, constants4);
         return this;
       }
       get names() {
@@ -24722,10 +24722,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.iteration})` + super.render(opts);
       }
-      optimizeNames(names, constants3) {
-        if (!super.optimizeNames(names, constants3))
+      optimizeNames(names, constants4) {
+        if (!super.optimizeNames(names, constants4))
           return;
-        this.iteration = optimizeExpr(this.iteration, names, constants3);
+        this.iteration = optimizeExpr(this.iteration, names, constants4);
         return this;
       }
       get names() {
@@ -24761,10 +24761,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.varKind} ${this.name} ${this.loop} ${this.iterable})` + super.render(opts);
       }
-      optimizeNames(names, constants3) {
-        if (!super.optimizeNames(names, constants3))
+      optimizeNames(names, constants4) {
+        if (!super.optimizeNames(names, constants4))
           return;
-        this.iterable = optimizeExpr(this.iterable, names, constants3);
+        this.iterable = optimizeExpr(this.iterable, names, constants4);
         return this;
       }
       get names() {
@@ -24806,11 +24806,11 @@ var require_codegen = __commonJS({
         (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNodes();
         return this;
       }
-      optimizeNames(names, constants3) {
+      optimizeNames(names, constants4) {
         var _a3, _b;
-        super.optimizeNames(names, constants3);
-        (_a3 = this.catch) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants3);
-        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names, constants3);
+        super.optimizeNames(names, constants4);
+        (_a3 = this.catch) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants4);
+        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names, constants4);
         return this;
       }
       get names() {
@@ -25111,7 +25111,7 @@ var require_codegen = __commonJS({
     function addExprNames(names, from) {
       return from instanceof code_1._CodeOrName ? addNames(names, from.names) : names;
     }
-    function optimizeExpr(expr, names, constants3) {
+    function optimizeExpr(expr, names, constants4) {
       if (expr instanceof code_1.Name)
         return replaceName(expr);
       if (!canOptimize(expr))
@@ -25126,14 +25126,14 @@ var require_codegen = __commonJS({
         return items;
       }, []));
       function replaceName(n) {
-        const c = constants3[n.str];
+        const c = constants4[n.str];
         if (c === void 0 || names[n.str] !== 1)
           return n;
         delete names[n.str];
         return c;
       }
       function canOptimize(e) {
-        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants3[c.str] !== void 0);
+        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants4[c.str] !== void 0);
       }
     }
     function subtractNames(names, from) {
@@ -27372,8 +27372,8 @@ var require_utils4 = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path8) {
-      let input2 = path8;
+    function removeDotSegments(path9) {
+      let input2 = path9;
       const output2 = [];
       let nextSlash = -1;
       let len = 0;
@@ -27778,8 +27778,8 @@ var require_schemes = __commonJS({
       }
       if (wsComponent.resourceName) {
         const queryIndex = wsComponent.resourceName.indexOf("?");
-        const path8 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
-        wsComponent.path = path8 && path8 !== "/" ? path8 : void 0;
+        const path9 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
+        wsComponent.path = path9 && path9 !== "/" ? path9 : void 0;
         wsComponent.query = queryIndex === -1 ? void 0 : wsComponent.resourceName.slice(queryIndex + 1);
         wsComponent.resourceName = void 0;
       }
@@ -31375,17 +31375,17 @@ var require_visit = __commonJS({
     visit2.BREAK = BREAK;
     visit2.SKIP = SKIP;
     visit2.REMOVE = REMOVE;
-    function visit_(key, node2, visitor, path8) {
-      const ctrl = callVisitor(key, node2, visitor, path8);
+    function visit_(key, node2, visitor, path9) {
+      const ctrl = callVisitor(key, node2, visitor, path9);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path8, ctrl);
-        return visit_(key, ctrl, visitor, path8);
+        replaceNode(key, path9, ctrl);
+        return visit_(key, ctrl, visitor, path9);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node2)) {
-          path8 = Object.freeze(path8.concat(node2));
+          path9 = Object.freeze(path9.concat(node2));
           for (let i = 0; i < node2.items.length; ++i) {
-            const ci = visit_(i, node2.items[i], visitor, path8);
+            const ci = visit_(i, node2.items[i], visitor, path9);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -31396,13 +31396,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node2)) {
-          path8 = Object.freeze(path8.concat(node2));
-          const ck = visit_("key", node2.key, visitor, path8);
+          path9 = Object.freeze(path9.concat(node2));
+          const ck = visit_("key", node2.key, visitor, path9);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node2.key = null;
-          const cv = visit_("value", node2.value, visitor, path8);
+          const cv = visit_("value", node2.value, visitor, path9);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -31423,17 +31423,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node2, visitor, path8) {
-      const ctrl = await callVisitor(key, node2, visitor, path8);
+    async function visitAsync_(key, node2, visitor, path9) {
+      const ctrl = await callVisitor(key, node2, visitor, path9);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path8, ctrl);
-        return visitAsync_(key, ctrl, visitor, path8);
+        replaceNode(key, path9, ctrl);
+        return visitAsync_(key, ctrl, visitor, path9);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node2)) {
-          path8 = Object.freeze(path8.concat(node2));
+          path9 = Object.freeze(path9.concat(node2));
           for (let i = 0; i < node2.items.length; ++i) {
-            const ci = await visitAsync_(i, node2.items[i], visitor, path8);
+            const ci = await visitAsync_(i, node2.items[i], visitor, path9);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -31444,13 +31444,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node2)) {
-          path8 = Object.freeze(path8.concat(node2));
-          const ck = await visitAsync_("key", node2.key, visitor, path8);
+          path9 = Object.freeze(path9.concat(node2));
+          const ck = await visitAsync_("key", node2.key, visitor, path9);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node2.key = null;
-          const cv = await visitAsync_("value", node2.value, visitor, path8);
+          const cv = await visitAsync_("value", node2.value, visitor, path9);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -31477,23 +31477,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node2, visitor, path8) {
+    function callVisitor(key, node2, visitor, path9) {
       if (typeof visitor === "function")
-        return visitor(key, node2, path8);
+        return visitor(key, node2, path9);
       if (identity.isMap(node2))
-        return visitor.Map?.(key, node2, path8);
+        return visitor.Map?.(key, node2, path9);
       if (identity.isSeq(node2))
-        return visitor.Seq?.(key, node2, path8);
+        return visitor.Seq?.(key, node2, path9);
       if (identity.isPair(node2))
-        return visitor.Pair?.(key, node2, path8);
+        return visitor.Pair?.(key, node2, path9);
       if (identity.isScalar(node2))
-        return visitor.Scalar?.(key, node2, path8);
+        return visitor.Scalar?.(key, node2, path9);
       if (identity.isAlias(node2))
-        return visitor.Alias?.(key, node2, path8);
+        return visitor.Alias?.(key, node2, path9);
       return void 0;
     }
-    function replaceNode(key, path8, node2) {
-      const parent = path8[path8.length - 1];
+    function replaceNode(key, path9, node2) {
+      const parent = path9[path9.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node2;
       } else if (identity.isPair(parent)) {
@@ -32103,10 +32103,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path8, value) {
+    function collectionFromPath(schema, path9, value) {
       let v = value;
-      for (let i = path8.length - 1; i >= 0; --i) {
-        const k = path8[i];
+      for (let i = path9.length - 1; i >= 0; --i) {
+        const k = path9[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -32125,7 +32125,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path8) => path8 == null || typeof path8 === "object" && !!path8[Symbol.iterator]().next().done;
+    var isEmptyPath = (path9) => path9 == null || typeof path9 === "object" && !!path9[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -32155,11 +32155,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path8, value) {
-        if (isEmptyPath(path8))
+      addIn(path9, value) {
+        if (isEmptyPath(path9))
           this.add(value);
         else {
-          const [key, ...rest] = path8;
+          const [key, ...rest] = path9;
           const node2 = this.get(key, true);
           if (identity.isCollection(node2))
             node2.addIn(rest, value);
@@ -32173,8 +32173,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path8) {
-        const [key, ...rest] = path8;
+      deleteIn(path9) {
+        const [key, ...rest] = path9;
         if (rest.length === 0)
           return this.delete(key);
         const node2 = this.get(key, true);
@@ -32188,8 +32188,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path8, keepScalar) {
-        const [key, ...rest] = path8;
+      getIn(path9, keepScalar) {
+        const [key, ...rest] = path9;
         const node2 = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node2) ? node2.value : node2;
@@ -32207,8 +32207,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path8) {
-        const [key, ...rest] = path8;
+      hasIn(path9) {
+        const [key, ...rest] = path9;
         if (rest.length === 0)
           return this.has(key);
         const node2 = this.get(key, true);
@@ -32218,8 +32218,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path8, value) {
-        const [key, ...rest] = path8;
+      setIn(path9, value) {
+        const [key, ...rest] = path9;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -34734,9 +34734,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path8, value) {
+      addIn(path9, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path8, value);
+          this.contents.addIn(path9, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -34811,14 +34811,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path8) {
-        if (Collection.isEmptyPath(path8)) {
+      deleteIn(path9) {
+        if (Collection.isEmptyPath(path9)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path8) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path9) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -34833,10 +34833,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path8, keepScalar) {
-        if (Collection.isEmptyPath(path8))
+      getIn(path9, keepScalar) {
+        if (Collection.isEmptyPath(path9))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path8, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path9, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -34847,10 +34847,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path8) {
-        if (Collection.isEmptyPath(path8))
+      hasIn(path9) {
+        if (Collection.isEmptyPath(path9))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path8) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path9) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -34867,13 +34867,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path8, value) {
-        if (Collection.isEmptyPath(path8)) {
+      setIn(path9, value) {
+        if (Collection.isEmptyPath(path9)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path8), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path9), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path8, value);
+          this.contents.setIn(path9, value);
         }
       }
       /**
@@ -36833,9 +36833,9 @@ var require_cst_visit = __commonJS({
     visit2.BREAK = BREAK;
     visit2.SKIP = SKIP;
     visit2.REMOVE = REMOVE;
-    visit2.itemAtPath = (cst, path8) => {
+    visit2.itemAtPath = (cst, path9) => {
       let item = cst;
-      for (const [field, index] of path8) {
+      for (const [field, index] of path9) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -36844,23 +36844,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit2.parentCollection = (cst, path8) => {
-      const parent = visit2.itemAtPath(cst, path8.slice(0, -1));
-      const field = path8[path8.length - 1][0];
+    visit2.parentCollection = (cst, path9) => {
+      const parent = visit2.itemAtPath(cst, path9.slice(0, -1));
+      const field = path9[path9.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path8, item, visitor) {
-      let ctrl = visitor(item, path8);
+    function _visit(path9, item, visitor) {
+      let ctrl = visitor(item, path9);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path8.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path9.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -36871,10 +36871,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path8);
+            ctrl = ctrl(item, path9);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path8) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path9) : ctrl;
     }
     exports.visit = visit2;
   }
@@ -38628,8 +38628,8 @@ var require_dist6 = __commonJS({
 // src/server.ts
 var import_express = __toESM(require_express2(), 1);
 import { timingSafeEqual } from "node:crypto";
-import path7 from "node:path";
-import { fileURLToPath } from "node:url";
+import path8 from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // node_modules/zod/v3/helpers/util.js
 var util;
@@ -39005,8 +39005,8 @@ function getErrorMap() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path8, errorMaps, issueData } = params;
-  const fullPath = [...path8, ...issueData.path || []];
+  const { data, path: path9, errorMaps, issueData } = params;
+  const fullPath = [...path9, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -39121,11 +39121,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path8, key) {
+  constructor(parent, value, path9, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path8;
+    this._path = path9;
     this._key = key;
   }
   get path() {
@@ -43014,10 +43014,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path8) {
-  if (!path8)
+function getElementAtPath(obj, path9) {
+  if (!path9)
     return obj;
-  return path8.reduce((acc, key) => acc?.[key], obj);
+  return path9.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -43429,11 +43429,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path8, issues) {
+function prefixIssues(path9, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path8);
+    iss.path.unshift(path9);
     return iss;
   });
 }
@@ -43866,16 +43866,16 @@ function flattenError(error61, mapper = (issue2) => issue2.message) {
 }
 function formatError(error61, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error62, path8 = []) => {
+  const processError = (error62, path9 = []) => {
     for (const issue2 of error62.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path8, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path9, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path8, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path9, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path8, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path9, ...issue2.path]);
       } else {
-        const fullpath = [...path8, ...issue2.path];
+        const fullpath = [...path9, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -43914,17 +43914,17 @@ function formatError(error61, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error61, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error62, path8 = []) => {
+  const processError = (error62, path9 = []) => {
     var _a3;
     for (const issue2 of error62.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path8, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path9, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path8, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path9, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path8, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path9, ...issue2.path]);
       } else {
-        const fullpath = [...path8, ...issue2.path];
+        const fullpath = [...path9, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -43963,8 +43963,8 @@ function treeifyError(error61, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path8 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path8) {
+  const path9 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path9) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -58945,11 +58945,11 @@ function normalizeObjectSchema(schema) {
   }
   return void 0;
 }
-function getDotPath(path8) {
-  if (path8.length === 0) {
+function getDotPath(path9) {
+  if (path9.length === 0) {
     return "object root";
   }
-  return path8.reduce((acc, seg, index) => {
+  return path9.reduce((acc, seg, index) => {
     if (index === 0) {
       return String(seg);
     }
@@ -61112,13 +61112,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path8 = ref.slice(1).split("/").filter(Boolean);
-  if (path8.length === 0) {
+  const path9 = ref.slice(1).split("/").filter(Boolean);
+  if (path9.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path8[0] === defsKey) {
-    const key = path8[1] === void 0 ? void 0 : decodeJSONPointerSegment(path8[1]);
+  if (path9[0] === defsKey) {
+    const key = path9[1] === void 0 ? void 0 : decodeJSONPointerSegment(path9[1]);
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -69462,6 +69462,30 @@ async function resolveExistingInside(root, relativePath) {
   }
   return candidate;
 }
+async function resolveDestinationInside(root, relativePath) {
+  validateRelativePath(relativePath);
+  const absolute = path2.resolve(root, relativePath);
+  if (!inside(root, absolute)) {
+    throw new ResearchStewardError("PATH_ESCAPE", `Path escapes project root: ${relativePath}`);
+  }
+  const parentReal = await realpath(path2.dirname(absolute));
+  if (!inside(root, parentReal)) {
+    throw new ResearchStewardError("PATH_ESCAPE", `Parent path escapes project root: ${relativePath}`);
+  }
+  try {
+    const info = await lstat(absolute);
+    if (info.isSymbolicLink()) {
+      const target = await realpath(absolute);
+      if (!inside(root, target)) {
+        throw new ResearchStewardError("SYMLINK_ESCAPE", `Symlink escapes project root: ${relativePath}`);
+      }
+    }
+  } catch (error61) {
+    const code = error61.code;
+    if (code !== "ENOENT") throw error61;
+  }
+  return absolute;
+}
 async function canonicalPrivateTarget(root, relativePath) {
   validateRelativePath(relativePath);
   const canonicalRoot = await realpath(path2.resolve(root));
@@ -72607,24 +72631,1143 @@ async function runRoundtable(root, rawPlan, requestedRunId) {
   }
 }
 
+// src/doctor.ts
+import { randomUUID as randomUUID5 } from "node:crypto";
+import { constants as constants3 } from "node:fs";
+import { access as access3, readFile as readFile4, readdir as readdir2, realpath as realpath3, rm as rm5, stat as stat4, writeFile } from "node:fs/promises";
+import path6 from "node:path";
+import { fileURLToPath } from "node:url";
+var DoctorCheckSchema = external_exports.object({
+  id: external_exports.string().min(1).max(100),
+  status: external_exports.enum(["pass", "warn", "fail", "skipped"]),
+  summary: external_exports.string().min(1).max(2e3),
+  remediation: external_exports.string().min(1).max(2e3).optional()
+}).strict();
+var DoctorReportSchema = external_exports.object({
+  protocol_version: external_exports.literal(PROTOCOL_VERSION),
+  checked_at: external_exports.string().datetime({ offset: true }),
+  overall: external_exports.enum(["pass", "warn", "fail"]),
+  checks: external_exports.array(DoctorCheckSchema).min(1)
+}).strict();
+var PUBLIC_SCHEMA_FILES = [
+  "project-manifest.schema.json",
+  "research-event.schema.json",
+  "roundtable-plan.schema.json"
+];
+var MINIMUM_SKILL_DIRECTORIES = 8;
+var PROVIDERS = [
+  { id: "qoder", commandName: "qoderclicn", pathVariable: "RESEARCH_STEWARD_QODER_PATH" },
+  { id: "kimi", commandName: "kimi", pathVariable: "RESEARCH_STEWARD_KIMI_PATH" },
+  { id: "grok", commandName: "grok", pathVariable: "RESEARCH_STEWARD_GROK_PATH" }
+];
+function isStrongHttpToken(token) {
+  if (token.length > 256 || /(replace|change|example|password|token)/i.test(token)) return false;
+  return /^[a-fA-F0-9]{64,}$/.test(token) || /^[A-Za-z0-9_-]{43,}$/.test(token);
+}
+async function accessProbe(env, name, explicit) {
+  const home = env["HOME"];
+  const candidates = [
+    explicit,
+    ...(env["PATH"] ?? "").split(path6.delimiter).filter(Boolean).map((directory) => path6.join(directory, name)),
+    ...home ? [path6.join(home, ".local", "bin", name), path6.join(home, ".kimi-code", "bin", name)] : []
+  ].filter((candidate) => Boolean(candidate));
+  for (const candidate of [...new Set(candidates)]) {
+    try {
+      await access3(candidate, constants3.X_OK);
+      return await realpath3(candidate);
+    } catch {
+    }
+  }
+  return void 0;
+}
+function defaultPluginRoot() {
+  return path6.dirname(path6.dirname(fileURLToPath(import.meta.url)));
+}
+function checkNodeVersion(nodeVersion) {
+  const match = /^v?(\d+)/.exec(nodeVersion.trim());
+  if (!match) {
+    return {
+      id: "node.version",
+      status: "warn",
+      summary: "The Node.js version string could not be parsed.",
+      remediation: "Run doctor under a standard Node.js runtime (node --version should print v20+)."
+    };
+  }
+  const major = Number.parseInt(match[1], 10);
+  if (major >= 20) {
+    return {
+      id: "node.version",
+      status: "pass",
+      summary: `Node.js major version ${major} satisfies the supported floor (20+).`
+    };
+  }
+  if (major >= 18) {
+    return {
+      id: "node.version",
+      status: "warn",
+      summary: `Node.js major version ${major} is below the supported floor of 20.`,
+      remediation: "Upgrade to Node.js 20 or newer; the package.json engines field requires >=20."
+    };
+  }
+  return {
+    id: "node.version",
+    status: "fail",
+    summary: `Node.js major version ${major} is unsupported.`,
+    remediation: "Install Node.js 20 or newer before using Research Steward."
+  };
+}
+async function nonEmptyFile(filePath) {
+  try {
+    const info = await stat4(filePath);
+    return info.isFile() && info.size > 0;
+  } catch {
+    return false;
+  }
+}
+async function checkBundle(pluginRoot) {
+  const bundles = ["cli.mjs", "server.mjs"];
+  const missing = [];
+  for (const bundle of bundles) {
+    if (!await nonEmptyFile(path6.join(pluginRoot, "dist", bundle))) missing.push(bundle);
+  }
+  if (missing.length > 0) {
+    return {
+      id: "bundle.dist",
+      status: "fail",
+      summary: `Missing or empty dist bundle files: ${missing.join(", ")}.`,
+      remediation: "Run npm run build inside the plugin directory to produce dist/cli.mjs and dist/server.mjs."
+    };
+  }
+  return {
+    id: "bundle.dist",
+    status: "pass",
+    summary: "dist/cli.mjs and dist/server.mjs are present and non-empty."
+  };
+}
+async function checkSchemas(pluginRoot) {
+  const broken = [];
+  for (const name of PUBLIC_SCHEMA_FILES) {
+    try {
+      JSON.parse(await readFile4(path6.join(pluginRoot, "schemas", name), "utf8"));
+    } catch {
+      broken.push(name);
+    }
+  }
+  if (broken.length > 0) {
+    return {
+      id: "schemas.public",
+      status: "fail",
+      summary: `Public schema files are missing or unparsable: ${broken.join(", ")}.`,
+      remediation: "Regenerate the published schemas (npm run build runs the schema generator)."
+    };
+  }
+  return {
+    id: "schemas.public",
+    status: "pass",
+    summary: `${PUBLIC_SCHEMA_FILES.length} public schema files exist and parse as JSON.`
+  };
+}
+async function checkSkills(pluginRoot) {
+  let count = 0;
+  try {
+    const entries = await readdir2(path6.join(pluginRoot, "skills"), { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (await nonEmptyFile(path6.join(pluginRoot, "skills", entry.name, "SKILL.md"))) count += 1;
+    }
+  } catch {
+    return {
+      id: "skills.inventory",
+      status: "fail",
+      summary: "The skills/ directory is missing or unreadable.",
+      remediation: "Reinstall the plugin so its bundled skills/ directory is restored."
+    };
+  }
+  if (count < MINIMUM_SKILL_DIRECTORIES) {
+    return {
+      id: "skills.inventory",
+      status: "fail",
+      summary: `Only ${count} skill directories contain SKILL.md; at least ${MINIMUM_SKILL_DIRECTORIES} are expected.`,
+      remediation: "Reinstall the plugin so its bundled skills/ directory is restored."
+    };
+  }
+  return {
+    id: "skills.inventory",
+    status: "pass",
+    summary: `${count} skill directories contain SKILL.md.`
+  };
+}
+async function checkMcpManifest(pluginRoot) {
+  try {
+    const parsed = JSON.parse(await readFile4(path6.join(pluginRoot, ".mcp.json"), "utf8"));
+    const servers = parsed !== null && typeof parsed === "object" ? parsed["mcpServers"] : void 0;
+    const entry = servers !== null && typeof servers === "object" ? servers["research-steward"] : void 0;
+    if (entry !== null && typeof entry === "object") {
+      return {
+        id: "mcp.manifest",
+        status: "pass",
+        summary: ".mcp.json parses and declares the research-steward server."
+      };
+    }
+    return {
+      id: "mcp.manifest",
+      status: "fail",
+      summary: ".mcp.json parses but has no research-steward server entry.",
+      remediation: "Restore the mcpServers.research-steward entry in the plugin's .mcp.json."
+    };
+  } catch {
+    return {
+      id: "mcp.manifest",
+      status: "fail",
+      summary: ".mcp.json is missing or is not valid JSON.",
+      remediation: "Reinstall the plugin or restore its .mcp.json manifest."
+    };
+  }
+}
+async function checkProjectRoot(projectRoot) {
+  if (projectRoot === void 0) {
+    return {
+      id: "project.root",
+      status: "skipped",
+      summary: "No project root was provided, so project checks were skipped."
+    };
+  }
+  try {
+    const info = await stat4(projectRoot);
+    if (!info.isDirectory()) {
+      return {
+        id: "project.root",
+        status: "fail",
+        summary: "The project root exists but is not a directory.",
+        remediation: "Point doctor at the directory that holds (or will hold) the .research workspace."
+      };
+    }
+  } catch {
+    return {
+      id: "project.root",
+      status: "fail",
+      summary: "The project root does not exist or is not accessible.",
+      remediation: "Create the project directory or fix its permissions before running Research Steward."
+    };
+  }
+  const probe = path6.join(projectRoot, `.research-steward-doctor-${process.pid}-${randomUUID5()}.tmp`);
+  try {
+    await writeFile(probe, "doctor write probe\n", { flag: "wx", mode: 384 });
+  } catch {
+    return {
+      id: "project.root",
+      status: "fail",
+      summary: "The project root is not writable by the current user.",
+      remediation: "Grant write permission on the project directory; Research Steward records events inside it."
+    };
+  } finally {
+    await rm5(probe, { force: true }).catch(() => void 0);
+  }
+  let manifestNote = "no protocol manifest yet";
+  try {
+    const raw = await readFile4(path6.join(projectRoot, ".research", "manifest.json"), "utf8");
+    JSON.parse(raw);
+    manifestNote = "the existing .research/manifest.json parses";
+  } catch (error61) {
+    if (error61.code !== "ENOENT") {
+      return {
+        id: "project.root",
+        status: "fail",
+        summary: "The project's .research/manifest.json exists but cannot be read as JSON.",
+        remediation: "Inspect .research/manifest.json; a corrupt manifest blocks every protocol operation."
+      };
+    }
+  }
+  return {
+    id: "project.root",
+    status: "pass",
+    summary: `The project root is a writable directory (${manifestNote}).`
+  };
+}
+async function checkProvider(provider, env, probe) {
+  let found;
+  try {
+    found = await probe(provider.commandName, env[provider.pathVariable]);
+  } catch {
+    return {
+      id: `provider.${provider.id}`,
+      status: "warn",
+      summary: `The executable probe for ${provider.commandName} failed, so its availability is unknown.`,
+      remediation: `Check permissions on the directories in PATH, or set ${provider.pathVariable} to an absolute path, then rerun doctor.`
+    };
+  }
+  if (found !== void 0) {
+    return {
+      id: `provider.${provider.id}`,
+      status: "pass",
+      summary: `${path6.basename(found)} found.`
+    };
+  }
+  return {
+    id: `provider.${provider.id}`,
+    status: "warn",
+    summary: `The ${provider.commandName} CLI was not found.`,
+    remediation: `Install the ${provider.commandName} CLI or set ${provider.pathVariable} to its absolute path. Roundtable nodes using this adapter will fail until then.`
+  };
+}
+function providerAuthCheck(provider) {
+  return {
+    id: `provider.${provider.id}.auth`,
+    status: "skipped",
+    summary: `Authentication status is not probed; doctor never invokes the ${provider.commandName} CLI.`,
+    remediation: `Verify manually, for example by running ${provider.commandName} --help and one small interactive request yourself.`
+  };
+}
+function checkHttpToken(env) {
+  const token = env["RESEARCH_STEWARD_HTTP_TOKEN"];
+  if (token === void 0 || token === "") {
+    return {
+      id: "http.token",
+      status: "skipped",
+      summary: "RESEARCH_STEWARD_HTTP_TOKEN is not set; local stdio mode does not need it."
+    };
+  }
+  if (!isStrongHttpToken(token)) {
+    return {
+      id: "http.token",
+      status: "fail",
+      summary: "RESEARCH_STEWARD_HTTP_TOKEN is set but does not meet strength policy.",
+      remediation: "Generate a fresh secret (for example: openssl rand -hex 32) and replace the variable's value."
+    };
+  }
+  return {
+    id: "http.token",
+    status: "pass",
+    summary: "RESEARCH_STEWARD_HTTP_TOKEN is set and meets strength policy."
+  };
+}
+function checkRouteBilling(env) {
+  const notes = [];
+  if (env["XAI_API_KEY"] !== void 0) {
+    notes.push(
+      "XAI_API_KEY is present; the Grok adapter strips it explicitly so calls stay on the CLI session instead of the metered xAI API"
+    );
+  }
+  if (env["DEEPSEEK_API_KEY"] !== void 0) {
+    notes.push("DEEPSEEK_API_KEY is a metered API key present in the environment; Research Steward will not use it");
+  }
+  if (notes.length > 0) {
+    return {
+      id: "route.billing",
+      status: "warn",
+      summary: `${notes.join(". ")}.`,
+      remediation: "Unset metered API keys in the shell that runs Research Steward if you want zero billing exposure."
+    };
+  }
+  return {
+    id: "route.billing",
+    status: "pass",
+    summary: "No metered API keys were detected in the environment."
+  };
+}
+function aggregateOverall(checks) {
+  if (checks.some((item) => item.status === "fail")) return "fail";
+  if (checks.some((item) => item.status === "warn")) return "warn";
+  return "pass";
+}
+async function runDoctor(options = {}) {
+  const env = options.env ?? process.env;
+  const nodeVersion = options.nodeVersion ?? process.version;
+  const pluginRoot = options.pluginRoot ?? defaultPluginRoot();
+  const probe = options.execProbe ?? ((name, explicit) => accessProbe(env, name, explicit));
+  const checks = [
+    checkNodeVersion(nodeVersion),
+    await checkBundle(pluginRoot),
+    await checkSchemas(pluginRoot),
+    await checkSkills(pluginRoot),
+    await checkMcpManifest(pluginRoot),
+    await checkProjectRoot(options.projectRoot)
+  ];
+  for (const provider of PROVIDERS) {
+    checks.push(await checkProvider(provider, env, probe));
+    checks.push(providerAuthCheck(provider));
+  }
+  checks.push(checkHttpToken(env), checkRouteBilling(env));
+  return DoctorReportSchema.parse({
+    protocol_version: PROTOCOL_VERSION,
+    checked_at: (/* @__PURE__ */ new Date()).toISOString(),
+    overall: aggregateOverall(checks),
+    checks
+  });
+}
+
+// src/presets.ts
+var PRESET_VERSION = "1.0.0";
+var REVIEW_TIMEOUT_MS = 3e5;
+var PRODUCE_TIMEOUT_MS = 6e5;
+var ADJUDICATE_TIMEOUT_MS = 6e5;
+var BUILT_IN_SKILL_IDS = Object.freeze([
+  "artifact-verification",
+  "blind-peer-review",
+  "evidence-adjudication",
+  "handoff-packaging",
+  "project-workspace",
+  "research-shared",
+  "research-steward",
+  "roundtable-collaboration"
+]);
+var quickReview = {
+  preset_id: "quick-review",
+  preset_version: PRESET_VERSION,
+  title: "Quick review",
+  description: "One reviewer reads the frozen packet, one adjudicator turns the findings into dispositions. The fastest complete loop.",
+  mode: "open",
+  limits: {
+    max_parallel: 2,
+    max_wall_time_ms: 9e5,
+    max_prompt_chars: 12e4,
+    max_output_chars: 6e4,
+    retry_limit: 1,
+    max_failures: 2
+  },
+  nodes: [
+    {
+      id: "reviewer",
+      actor_id: "quick-reviewer",
+      role: "reviewer",
+      brief: "Review the frozen packet {{packet_id}} end to end. Judge whether every claim is supported by the evidence inside the packet, report concrete findings with severity and evidence locators, and say plainly what you could not verify.",
+      adapter: "fake",
+      depends_on: [],
+      visibility: "shared",
+      can_adjudicate: false,
+      timeout_ms: REVIEW_TIMEOUT_MS
+    },
+    {
+      id: "adjudicator",
+      actor_id: "quick-adjudicator",
+      role: "adjudicator",
+      brief: "Read the reviewer's committed findings on packet {{packet_id}}, decide a disposition for each one, and give a rationale every time. Do not introduce new claims of your own.",
+      adapter: "fake",
+      depends_on: ["reviewer"],
+      visibility: "shared",
+      can_adjudicate: true,
+      timeout_ms: ADJUDICATE_TIMEOUT_MS
+    }
+  ]
+};
+var blindTriad = {
+  preset_id: "blind-triad",
+  preset_version: PRESET_VERSION,
+  title: "Blind triad",
+  description: "Three mutually blind reviewers work in parallel, then an adjudicator compares all three reports and settles every finding.",
+  mode: "blind",
+  limits: {
+    max_parallel: 3,
+    max_wall_time_ms: 18e5,
+    max_prompt_chars: 12e4,
+    max_output_chars: 6e4,
+    retry_limit: 1,
+    max_failures: 3
+  },
+  nodes: [
+    {
+      id: "blind-reviewer-1",
+      actor_id: "triad-reviewer-1",
+      role: "blind reviewer",
+      brief: "You are one of three independent blind reviewers for packet {{packet_id}}. Work only from the packet contents, make no assumptions about what the other reviewers will say, and report findings with severity, evidence locators, and open uncertainties.",
+      adapter: "fake",
+      depends_on: [],
+      visibility: "blind",
+      blind_group: "triad",
+      can_adjudicate: false,
+      timeout_ms: REVIEW_TIMEOUT_MS
+    },
+    {
+      id: "blind-reviewer-2",
+      actor_id: "triad-reviewer-2",
+      role: "blind reviewer",
+      brief: "You are one of three independent blind reviewers for packet {{packet_id}}. Work only from the packet contents, make no assumptions about what the other reviewers will say, and report findings with severity, evidence locators, and open uncertainties.",
+      adapter: "fake",
+      depends_on: [],
+      visibility: "blind",
+      blind_group: "triad",
+      can_adjudicate: false,
+      timeout_ms: REVIEW_TIMEOUT_MS
+    },
+    {
+      id: "blind-reviewer-3",
+      actor_id: "triad-reviewer-3",
+      role: "blind reviewer",
+      brief: "You are one of three independent blind reviewers for packet {{packet_id}}. Work only from the packet contents, make no assumptions about what the other reviewers will say, and report findings with severity, evidence locators, and open uncertainties.",
+      adapter: "fake",
+      depends_on: [],
+      visibility: "blind",
+      blind_group: "triad",
+      can_adjudicate: false,
+      timeout_ms: REVIEW_TIMEOUT_MS
+    },
+    {
+      id: "adjudicator",
+      actor_id: "triad-adjudicator",
+      role: "adjudicator",
+      brief: "All three blind reviews of packet {{packet_id}} are committed. Compare them, adjudicate each finding with an explicit disposition and rationale, and surface disagreements between the reviewers instead of papering over them.",
+      adapter: "fake",
+      depends_on: ["blind-reviewer-1", "blind-reviewer-2", "blind-reviewer-3"],
+      visibility: "shared",
+      can_adjudicate: true,
+      timeout_ms: ADJUDICATE_TIMEOUT_MS
+    }
+  ]
+};
+var fullPanel = {
+  preset_id: "full-panel",
+  preset_version: PRESET_VERSION,
+  title: "Full panel",
+  description: "A producer drafts the deliverable, a methods reviewer and two blind panel reviewers assess it, and an adjudicator closes the loop.",
+  mode: "mixed",
+  limits: {
+    max_parallel: 3,
+    max_wall_time_ms: 27e5,
+    max_prompt_chars: 15e4,
+    max_output_chars: 6e4,
+    retry_limit: 1,
+    max_failures: 4
+  },
+  nodes: [
+    {
+      id: "producer",
+      actor_id: "panel-producer",
+      role: "producer",
+      brief: "Produce the primary deliverable for packet {{packet_id}} as described in the packet brief. State your assumptions explicitly and attach evidence for every substantive claim.",
+      adapter: "fake",
+      depends_on: [],
+      visibility: "shared",
+      can_adjudicate: false,
+      timeout_ms: PRODUCE_TIMEOUT_MS
+    },
+    {
+      id: "methods-reviewer",
+      actor_id: "panel-methods-reviewer",
+      role: "methods reviewer",
+      brief: "Review the methodology behind the producer's contribution for packet {{packet_id}}: design, controls, statistics, and reproducibility. Report findings with severity and evidence.",
+      adapter: "fake",
+      depends_on: ["producer"],
+      visibility: "shared",
+      can_adjudicate: false,
+      timeout_ms: REVIEW_TIMEOUT_MS
+    },
+    {
+      id: "blind-reviewer-1",
+      actor_id: "panel-blind-reviewer-1",
+      role: "blind reviewer",
+      brief: "You are one of two independent blind reviewers on the panel for packet {{packet_id}}. Assess the producer's contribution on its own merits, without seeing any other review, and report findings with severity and evidence.",
+      adapter: "fake",
+      depends_on: ["producer"],
+      visibility: "blind",
+      blind_group: "panel-blind",
+      can_adjudicate: false,
+      timeout_ms: REVIEW_TIMEOUT_MS
+    },
+    {
+      id: "blind-reviewer-2",
+      actor_id: "panel-blind-reviewer-2",
+      role: "blind reviewer",
+      brief: "You are one of two independent blind reviewers on the panel for packet {{packet_id}}. Assess the producer's contribution on its own merits, without seeing any other review, and report findings with severity and evidence.",
+      adapter: "fake",
+      depends_on: ["producer"],
+      visibility: "blind",
+      blind_group: "panel-blind",
+      can_adjudicate: false,
+      timeout_ms: REVIEW_TIMEOUT_MS
+    },
+    {
+      id: "adjudicator",
+      actor_id: "panel-adjudicator",
+      role: "adjudicator",
+      brief: "With the methods review and both blind panel reviews of packet {{packet_id}} committed, adjudicate every finding, record dispositions with rationales, and summarize what must change before acceptance.",
+      adapter: "fake",
+      depends_on: ["methods-reviewer", "blind-reviewer-1", "blind-reviewer-2"],
+      visibility: "shared",
+      can_adjudicate: true,
+      timeout_ms: ADJUDICATE_TIMEOUT_MS
+    }
+  ]
+};
+var producerReviewerRevision = {
+  preset_id: "producer-reviewer-revision",
+  preset_version: PRESET_VERSION,
+  title: "Producer, reviewer, revision",
+  description: "A strictly sequential chain: the producer drafts, the reviewer critiques, and the reviser addresses every finding in a revised draft.",
+  mode: "open",
+  limits: {
+    max_parallel: 1,
+    max_wall_time_ms: 18e5,
+    max_prompt_chars: 12e4,
+    max_output_chars: 6e4,
+    retry_limit: 1,
+    max_failures: 3
+  },
+  nodes: [
+    {
+      id: "producer",
+      actor_id: "chain-producer",
+      role: "producer",
+      brief: "Draft the deliverable for packet {{packet_id}} following the packet brief. Make your assumptions explicit and cite packet evidence for each claim.",
+      adapter: "fake",
+      depends_on: [],
+      visibility: "shared",
+      can_adjudicate: false,
+      timeout_ms: PRODUCE_TIMEOUT_MS
+    },
+    {
+      id: "reviewer",
+      actor_id: "chain-reviewer",
+      role: "reviewer",
+      brief: "Review the producer's draft for packet {{packet_id}}. List concrete, actionable findings with severity, and keep matters of correctness separate from matters of style.",
+      adapter: "fake",
+      depends_on: ["producer"],
+      visibility: "shared",
+      can_adjudicate: false,
+      timeout_ms: REVIEW_TIMEOUT_MS
+    },
+    {
+      id: "reviser",
+      actor_id: "chain-reviser",
+      role: "reviser",
+      brief: "Revise the draft for packet {{packet_id}} using the reviewer's findings. Address every finding explicitly: either fix it, or explain why the draft should stand as it is.",
+      adapter: "fake",
+      depends_on: ["producer", "reviewer"],
+      visibility: "shared",
+      can_adjudicate: false,
+      timeout_ms: PRODUCE_TIMEOUT_MS
+    }
+  ]
+};
+var manuscriptStrict = {
+  preset_id: "manuscript-strict",
+  preset_version: PRESET_VERSION,
+  title: "Manuscript strict",
+  description: "The heavyweight manuscript pipeline: a producer, three mutually blind reviewers, a statistics reviewer, and a closing adjudicator.",
+  mode: "mixed",
+  limits: {
+    max_parallel: 4,
+    max_wall_time_ms: 36e5,
+    max_prompt_chars: 2e5,
+    max_output_chars: 8e4,
+    retry_limit: 1,
+    max_failures: 4
+  },
+  nodes: [
+    {
+      id: "producer",
+      actor_id: "manuscript-producer",
+      role: "producer",
+      brief: "Prepare the manuscript deliverable for packet {{packet_id}} following the packet brief, attaching evidence to every substantive claim.",
+      adapter: "fake",
+      depends_on: [],
+      visibility: "shared",
+      can_adjudicate: false,
+      timeout_ms: PRODUCE_TIMEOUT_MS
+    },
+    {
+      id: "blind-reviewer-1",
+      actor_id: "manuscript-blind-reviewer-1",
+      role: "blind reviewer",
+      brief: "You are one of three independent blind reviewers of the manuscript for packet {{packet_id}}. Judge soundness, framing, and evidence support strictly from the packet, without seeing any other review, and report findings with severity.",
+      adapter: "fake",
+      depends_on: ["producer"],
+      visibility: "blind",
+      blind_group: "manuscript-blind",
+      can_adjudicate: false,
+      timeout_ms: REVIEW_TIMEOUT_MS
+    },
+    {
+      id: "blind-reviewer-2",
+      actor_id: "manuscript-blind-reviewer-2",
+      role: "blind reviewer",
+      brief: "You are one of three independent blind reviewers of the manuscript for packet {{packet_id}}. Judge soundness, framing, and evidence support strictly from the packet, without seeing any other review, and report findings with severity.",
+      adapter: "fake",
+      depends_on: ["producer"],
+      visibility: "blind",
+      blind_group: "manuscript-blind",
+      can_adjudicate: false,
+      timeout_ms: REVIEW_TIMEOUT_MS
+    },
+    {
+      id: "blind-reviewer-3",
+      actor_id: "manuscript-blind-reviewer-3",
+      role: "blind reviewer",
+      brief: "You are one of three independent blind reviewers of the manuscript for packet {{packet_id}}. Judge soundness, framing, and evidence support strictly from the packet, without seeing any other review, and report findings with severity.",
+      adapter: "fake",
+      depends_on: ["producer"],
+      visibility: "blind",
+      blind_group: "manuscript-blind",
+      can_adjudicate: false,
+      timeout_ms: REVIEW_TIMEOUT_MS
+    },
+    {
+      id: "statistics-reviewer",
+      actor_id: "manuscript-statistics-reviewer",
+      role: "statistics reviewer",
+      brief: "Audit the statistical reporting of the manuscript for packet {{packet_id}}: tests, sample sizes, replicates, corrections, and whether the numbers actually support the stated claims.",
+      adapter: "fake",
+      depends_on: ["producer"],
+      visibility: "shared",
+      can_adjudicate: false,
+      timeout_ms: REVIEW_TIMEOUT_MS
+    },
+    {
+      id: "adjudicator",
+      actor_id: "manuscript-adjudicator",
+      role: "adjudicator",
+      brief: "All three blind reviews and the statistics audit for packet {{packet_id}} are committed. Adjudicate every finding with a disposition and rationale, and state the conditions for acceptance.",
+      adapter: "fake",
+      depends_on: [
+        "blind-reviewer-1",
+        "blind-reviewer-2",
+        "blind-reviewer-3",
+        "statistics-reviewer"
+      ],
+      visibility: "shared",
+      can_adjudicate: true,
+      timeout_ms: ADJUDICATE_TIMEOUT_MS
+    }
+  ]
+};
+var figureAudit = {
+  preset_id: "figure-audit",
+  preset_version: PRESET_VERSION,
+  title: "Figure audit",
+  description: "A figure reviewer checks visual honesty, a provenance reviewer traces every figure to its source data, and an adjudicator settles the findings.",
+  mode: "open",
+  limits: {
+    max_parallel: 2,
+    max_wall_time_ms: 12e5,
+    max_prompt_chars: 12e4,
+    max_output_chars: 6e4,
+    retry_limit: 1,
+    max_failures: 3
+  },
+  nodes: [
+    {
+      id: "figure-reviewer",
+      actor_id: "figure-audit-reviewer",
+      role: "figure reviewer",
+      brief: "Audit the figures in packet {{packet_id}} for accuracy and honesty: axes, scales, error bars, image processing, and whether each figure supports the claim its caption makes.",
+      adapter: "fake",
+      depends_on: [],
+      visibility: "shared",
+      can_adjudicate: false,
+      timeout_ms: REVIEW_TIMEOUT_MS
+    },
+    {
+      id: "provenance-reviewer",
+      actor_id: "figure-provenance-reviewer",
+      role: "provenance reviewer",
+      brief: "Trace the provenance of every figure in packet {{packet_id}}: source data, generation scripts, and processing steps. Flag any figure whose origin cannot be established from the packet.",
+      adapter: "fake",
+      depends_on: [],
+      visibility: "shared",
+      can_adjudicate: false,
+      timeout_ms: REVIEW_TIMEOUT_MS
+    },
+    {
+      id: "adjudicator",
+      actor_id: "figure-adjudicator",
+      role: "adjudicator",
+      brief: "Combine the figure audit and the provenance audit for packet {{packet_id}}, adjudicate each finding with a disposition and rationale, and list the figures that block acceptance.",
+      adapter: "fake",
+      depends_on: ["figure-reviewer", "provenance-reviewer"],
+      visibility: "shared",
+      can_adjudicate: true,
+      timeout_ms: ADJUDICATE_TIMEOUT_MS
+    }
+  ]
+};
+var codeScienceAudit = {
+  preset_id: "code-science-audit",
+  preset_version: PRESET_VERSION,
+  title: "Code and science audit",
+  description: "A code reviewer and a science reviewer examine the packet from their own angles, then an adjudicator reconciles the two reports.",
+  mode: "open",
+  limits: {
+    max_parallel: 2,
+    max_wall_time_ms: 18e5,
+    max_prompt_chars: 15e4,
+    max_output_chars: 6e4,
+    retry_limit: 1,
+    max_failures: 3
+  },
+  nodes: [
+    {
+      id: "code-reviewer",
+      actor_id: "audit-code-reviewer",
+      role: "code reviewer",
+      brief: "Review the code in packet {{packet_id}} for correctness, reproducibility, and hidden assumptions that could change the scientific results.",
+      adapter: "fake",
+      depends_on: [],
+      visibility: "shared",
+      can_adjudicate: false,
+      timeout_ms: REVIEW_TIMEOUT_MS
+    },
+    {
+      id: "science-reviewer",
+      actor_id: "audit-science-reviewer",
+      role: "science reviewer",
+      brief: "Review the scientific reasoning in packet {{packet_id}}: whether the methods answer the question, the analysis matches the design, and the conclusions stay within the evidence.",
+      adapter: "fake",
+      depends_on: [],
+      visibility: "shared",
+      can_adjudicate: false,
+      timeout_ms: REVIEW_TIMEOUT_MS
+    },
+    {
+      id: "adjudicator",
+      actor_id: "audit-adjudicator",
+      role: "adjudicator",
+      brief: "Adjudicate the code review and the science review for packet {{packet_id}} together, resolve any conflicts between them, and record a disposition with rationale for each finding.",
+      adapter: "fake",
+      depends_on: ["code-reviewer", "science-reviewer"],
+      visibility: "shared",
+      can_adjudicate: true,
+      timeout_ms: ADJUDICATE_TIMEOUT_MS
+    }
+  ]
+};
+var PRESETS = Object.freeze({
+  "quick-review": quickReview,
+  "blind-triad": blindTriad,
+  "full-panel": fullPanel,
+  "producer-reviewer-revision": producerReviewerRevision,
+  "manuscript-strict": manuscriptStrict,
+  "figure-audit": figureAudit,
+  "code-science-audit": codeScienceAudit
+});
+var PRESET_IDS = Object.freeze(Object.keys(PRESETS));
+
+// src/planner.ts
+var PLANNER_GENERATOR_VERSION = "planner/0.2.0";
+var AdapterSchema = external_exports.enum(["kimi", "qoder", "grok", "fake"]);
+var ModeSchema = external_exports.enum(["open", "blind", "mixed"]);
+var HashSchema2 = external_exports.string().regex(/^[a-f0-9]{64}$/);
+var PacketIdSchema = external_exports.string().min(1).max(64).regex(/^[a-z0-9][a-z0-9-]*$/);
+var ProviderRouteSchema = external_exports.object({
+  adapter: AdapterSchema,
+  model: external_exports.string().min(1).max(100).optional(),
+  route: external_exports.enum(["subscription_cli", "fake"])
+}).strict();
+var WorkflowLockSchema = external_exports.object({
+  lock_version: external_exports.literal(1),
+  created_at: external_exports.string().datetime({ offset: true }),
+  plan_hash: HashSchema2,
+  preset_id: external_exports.string().min(1).max(64),
+  preset_version: external_exports.string().regex(/^\d+\.\d+\.\d+$/),
+  generator_version: external_exports.literal(PLANNER_GENERATOR_VERSION),
+  packet_id: PacketIdSchema,
+  provider_routes: external_exports.record(external_exports.string(), ProviderRouteSchema),
+  skill_ids: external_exports.array(external_exports.string().min(1).max(64)).max(64),
+  capability_gaps: external_exports.array(external_exports.string().min(1).max(2e3)).max(64)
+}).strict();
+var LimitsOverrideSchema = external_exports.object({
+  max_parallel: external_exports.number().int().min(1).max(8),
+  max_wall_time_ms: external_exports.number().int().min(1e3).max(72e5),
+  max_prompt_chars: external_exports.number().int().min(1e3).max(5e5),
+  max_output_chars: external_exports.number().int().min(1e3).max(2e5),
+  retry_limit: external_exports.number().int().min(0).max(2),
+  max_failures: external_exports.number().int().min(0).max(32)
+}).partial().strict();
+var OverridesSchema = external_exports.object({
+  mode: ModeSchema.optional(),
+  adapters: external_exports.record(external_exports.string().min(1).max(64), AdapterSchema).optional(),
+  models: external_exports.record(external_exports.string().min(1).max(64), external_exports.string().min(1).max(100)).optional(),
+  limits: LimitsOverrideSchema.optional(),
+  briefs: external_exports.record(external_exports.string().min(1).max(64), external_exports.string().min(1).max(2e4)).optional()
+}).strict();
+var BuildPlanInputSchema = external_exports.object({
+  preset_id: external_exports.string().min(1).max(64),
+  packet_id: PacketIdSchema,
+  overrides: OverridesSchema.optional()
+}).strict();
+function validatePlanStructure(plan) {
+  validateGraph(plan);
+}
+function assertKnownNodeIds(preset, overrides) {
+  const knownIds = new Set(preset.nodes.map((node2) => node2.id));
+  const records = [
+    ["adapters", overrides.adapters],
+    ["models", overrides.models],
+    ["briefs", overrides.briefs]
+  ];
+  for (const [field, record2] of records) {
+    for (const nodeId of Object.keys(record2 ?? {})) {
+      if (!knownIds.has(nodeId)) {
+        throw new ResearchStewardError(
+          "UNKNOWN_PLAN_NODE",
+          `overrides.${field} names node "${nodeId}", which does not exist in preset ${preset.preset_id}.`,
+          { preset_id: preset.preset_id, field, node_id: nodeId }
+        );
+      }
+    }
+  }
+}
+function instantiateNode(template, packetId, overrides) {
+  const brief = (overrides.briefs?.[template.id] ?? template.brief).replaceAll(
+    "{{packet_id}}",
+    packetId
+  );
+  const model = overrides.models?.[template.id];
+  return {
+    id: template.id,
+    actor_id: template.actor_id,
+    role: template.role,
+    adapter: overrides.adapters?.[template.id] ?? template.adapter,
+    brief,
+    depends_on: [...template.depends_on],
+    visibility: template.visibility,
+    can_adjudicate: template.can_adjudicate,
+    timeout_ms: template.timeout_ms,
+    ...template.blind_group !== void 0 ? { blind_group: template.blind_group } : {},
+    ...model !== void 0 ? { model } : {}
+  };
+}
+function buildPlan(input2) {
+  let parsed;
+  try {
+    parsed = BuildPlanInputSchema.parse(input2);
+  } catch (error61) {
+    throw new ResearchStewardError(
+      "INVALID_PLANNER_INPUT",
+      `Planner input is invalid: ${errorMessage(error61)}`
+    );
+  }
+  const preset = PRESETS[parsed.preset_id];
+  if (!preset) {
+    throw new ResearchStewardError(
+      "UNKNOWN_PRESET",
+      `Unknown preset "${parsed.preset_id}". Available presets: ${Object.keys(PRESETS).join(", ")}.`
+    );
+  }
+  const overrides = parsed.overrides ?? {};
+  assertKnownNodeIds(preset, overrides);
+  const candidate = {
+    version: 1,
+    name: preset.title,
+    packet_id: parsed.packet_id,
+    mode: overrides.mode ?? preset.mode,
+    limits: { ...preset.limits, ...overrides.limits },
+    nodes: preset.nodes.map((template) => instantiateNode(template, parsed.packet_id, overrides))
+  };
+  let plan;
+  try {
+    plan = RoundtablePlanSchema.parse(candidate);
+  } catch (error61) {
+    throw new ResearchStewardError(
+      "PRESET_PLAN_INVALID",
+      `Preset ${preset.preset_id} produced a plan that fails RoundtablePlanSchema: ${errorMessage(error61)}`
+    );
+  }
+  validatePlanStructure(plan);
+  const providerRoutes = {};
+  const capabilityGaps = [];
+  for (const node2 of plan.nodes) {
+    providerRoutes[node2.id] = {
+      adapter: node2.adapter,
+      route: node2.adapter === "fake" ? "fake" : "subscription_cli",
+      ...node2.model !== void 0 ? { model: node2.model } : {}
+    };
+    if (node2.adapter === "fake") {
+      capabilityGaps.push(
+        `Node "${node2.id}" is routed to the fake adapter placeholder; bind a real subscription CLI adapter before a production run.`
+      );
+    }
+  }
+  const lock = WorkflowLockSchema.parse({
+    lock_version: 1,
+    created_at: (/* @__PURE__ */ new Date()).toISOString(),
+    plan_hash: sha256Text(stableJson(plan)),
+    preset_id: preset.preset_id,
+    preset_version: preset.preset_version,
+    generator_version: PLANNER_GENERATOR_VERSION,
+    packet_id: parsed.packet_id,
+    provider_routes: providerRoutes,
+    skill_ids: [...BUILT_IN_SKILL_IDS],
+    capability_gaps: capabilityGaps
+  });
+  return { plan, lock };
+}
+async function writeLock(filePath, lock) {
+  const validated = WorkflowLockSchema.parse(lock);
+  await writeImmutableFile(filePath, `${JSON.stringify(validated, null, 2)}
+`);
+}
+
+// src/forecast.ts
+var FORECAST_VERSION = 1;
+var LARGE_INVOCATION_BUDGET = 64;
+var ForecastWarningSchema = external_exports.object({
+  code: external_exports.string().min(1).max(100),
+  severity: external_exports.enum(["info", "blocking"]),
+  message: external_exports.string().min(1).max(2e3)
+}).strict();
+var ProviderForecastSchema = external_exports.object({
+  nodes: external_exports.number().int().min(1),
+  worst_case_invocations: external_exports.number().int().min(1),
+  route: external_exports.enum(["subscription_cli", "fake"])
+}).strict();
+var ForecastSchema = external_exports.object({
+  forecast_version: external_exports.literal(FORECAST_VERSION),
+  created_at: external_exports.string().datetime({ offset: true }),
+  plan_hash: external_exports.string().regex(/^[a-f0-9]{64}$/),
+  node_count: external_exports.number().int().min(1).max(32),
+  max_parallel_width: external_exports.number().int().min(1).max(8),
+  worst_case_invocations: external_exports.number().int().min(0),
+  fake_invocations: external_exports.number().int().min(0),
+  per_provider: external_exports.record(external_exports.string().min(1).max(50), ProviderForecastSchema),
+  prompt_char_upper_bound: external_exports.number().int().min(0),
+  output_char_upper_bound: external_exports.number().int().min(0),
+  wall_time_upper_bound_ms: external_exports.number().int().min(0),
+  wall_time_bound_source: external_exports.enum(["limits.max_wall_time_ms", "critical_path_estimate"]),
+  warnings: external_exports.array(ForecastWarningSchema).max(100)
+}).strict();
+function classifyRoute(adapter) {
+  switch (adapter) {
+    case "fake":
+      return "fake";
+    case "kimi":
+    case "qoder":
+    case "grok":
+      return "subscription_cli";
+    default:
+      return "unknown";
+  }
+}
+function routeWarning(adapter, route) {
+  if (route !== "metered_api" && route !== "unknown") return void 0;
+  return {
+    code: "metered-or-unknown-route",
+    severity: "blocking",
+    message: `Adapter "${adapter}" resolves to the "${route}" route. The forecast cannot bound its cost as a flat-rate subscription call, so a human must review this plan before any model is started.`
+  };
+}
+function representableRoute(adapter) {
+  const route = classifyRoute(adapter);
+  if (route === "subscription_cli" || route === "fake") return route;
+  throw new ResearchStewardError(
+    "UNREPRESENTABLE_ROUTE",
+    `Adapter "${adapter}" classifies as "${route}", which the per_provider table cannot represent yet.`
+  );
+}
+function nodeDepths(plan) {
+  const nodes = new Map(plan.nodes.map((node2) => [node2.id, node2]));
+  if (nodes.size !== plan.nodes.length) {
+    throw new ResearchStewardError("DUPLICATE_NODE", "Roundtable node IDs must be unique.");
+  }
+  const depths = /* @__PURE__ */ new Map();
+  const visiting = /* @__PURE__ */ new Set();
+  const depthOf = (nodeId) => {
+    const known = depths.get(nodeId);
+    if (known !== void 0) return known;
+    if (visiting.has(nodeId)) {
+      throw new ResearchStewardError(
+        "CYCLIC_PLAN",
+        "Roundtable plan must be a directed acyclic graph."
+      );
+    }
+    const node2 = nodes.get(nodeId);
+    if (!node2) {
+      throw new ResearchStewardError(
+        "UNKNOWN_DEPENDENCY",
+        `Plan references unknown node ${nodeId}.`
+      );
+    }
+    visiting.add(nodeId);
+    let depth = 0;
+    for (const dependency of node2.depends_on) {
+      depth = Math.max(depth, depthOf(dependency) + 1);
+    }
+    visiting.delete(nodeId);
+    depths.set(nodeId, depth);
+    return depth;
+  };
+  for (const node2 of plan.nodes) depthOf(node2.id);
+  return depths;
+}
+function buildForecast(rawPlan) {
+  const plan = RoundtablePlanSchema.parse(rawPlan);
+  const depths = nodeDepths(plan);
+  const layerSizes = /* @__PURE__ */ new Map();
+  for (const depth of depths.values()) {
+    layerSizes.set(depth, (layerSizes.get(depth) ?? 0) + 1);
+  }
+  const widestLayer = Math.max(...layerSizes.values());
+  const criticalPathNodes = Math.max(...depths.values()) + 1;
+  const attemptsPerNode = plan.limits.retry_limit + 1;
+  const perProvider = {};
+  const warnings = [];
+  const inspectedAdapters = /* @__PURE__ */ new Set();
+  for (const node2 of plan.nodes) {
+    if (!inspectedAdapters.has(node2.adapter)) {
+      inspectedAdapters.add(node2.adapter);
+      const warning = routeWarning(node2.adapter, classifyRoute(node2.adapter));
+      if (warning) warnings.push(warning);
+    }
+    const entry = perProvider[node2.adapter] ?? {
+      nodes: 0,
+      worst_case_invocations: 0,
+      route: representableRoute(node2.adapter)
+    };
+    entry.nodes += 1;
+    entry.worst_case_invocations += attemptsPerNode;
+    perProvider[node2.adapter] = entry;
+  }
+  let worstCaseInvocations = 0;
+  let fakeInvocations = 0;
+  for (const entry of Object.values(perProvider)) {
+    if (entry.route === "fake") fakeInvocations += entry.worst_case_invocations;
+    else worstCaseInvocations += entry.worst_case_invocations;
+  }
+  if (worstCaseInvocations > LARGE_INVOCATION_BUDGET) {
+    warnings.push({
+      code: "large-invocation-budget",
+      severity: "info",
+      message: `This plan can invoke paid providers up to ${worstCaseInvocations} times (${attemptsPerNode} attempts per node), above the review threshold of ${LARGE_INVOCATION_BUDGET}. Consider a smaller plan or a lower retry_limit.`
+    });
+  }
+  const everyLayerFitsOneBatch = widestLayer <= plan.limits.max_parallel;
+  const maxNodeTimeoutMs = Math.max(...plan.nodes.map((node2) => node2.timeout_ms));
+  const criticalPathEstimateMs = criticalPathNodes * maxNodeTimeoutMs * attemptsPerNode;
+  const criticalPathWins = everyLayerFitsOneBatch && criticalPathEstimateMs < plan.limits.max_wall_time_ms;
+  const wallTimeUpperBoundMs = criticalPathWins ? criticalPathEstimateMs : plan.limits.max_wall_time_ms;
+  return ForecastSchema.parse({
+    forecast_version: FORECAST_VERSION,
+    created_at: (/* @__PURE__ */ new Date()).toISOString(),
+    plan_hash: sha256Text(stableJson(plan)),
+    node_count: plan.nodes.length,
+    max_parallel_width: Math.min(plan.limits.max_parallel, widestLayer),
+    worst_case_invocations: worstCaseInvocations,
+    fake_invocations: fakeInvocations,
+    per_provider: perProvider,
+    prompt_char_upper_bound: plan.limits.max_prompt_chars * plan.nodes.length,
+    output_char_upper_bound: plan.limits.max_output_chars * plan.nodes.length,
+    wall_time_upper_bound_ms: wallTimeUpperBoundMs,
+    wall_time_bound_source: criticalPathWins ? "critical_path_estimate" : "limits.max_wall_time_ms",
+    warnings
+  });
+}
+
 // src/package.ts
 var import_yaml2 = __toESM(require_dist6(), 1);
 import { spawn as spawn2 } from "node:child_process";
-import { randomUUID as randomUUID5 } from "node:crypto";
+import { randomUUID as randomUUID6 } from "node:crypto";
 import {
   copyFile as copyFile2,
   link,
   lstat as lstat2,
   mkdir as mkdir5,
   mkdtemp as mkdtemp2,
-  readFile as readFile4,
-  readdir as readdir2,
-  rm as rm5,
-  stat as stat4,
+  readFile as readFile5,
+  readdir as readdir3,
+  rm as rm6,
+  stat as stat5,
   unlink
 } from "node:fs/promises";
 import os2 from "node:os";
-import path6 from "node:path";
+import path7 from "node:path";
 var HandoffFileSchema = external_exports.object({
   path: external_exports.string().min(1).max(4096),
   size: external_exports.number().int().nonnegative(),
@@ -72762,10 +73905,10 @@ function expectedArchiveEntries(expected) {
   for (const file2 of expected.files) {
     const payloadPath = `payload/${file2.path}`;
     entries.add(payloadPath);
-    let parent = path6.posix.dirname(payloadPath);
+    let parent = path7.posix.dirname(payloadPath);
     while (parent !== "." && parent !== "") {
       entries.add(parent);
-      parent = path6.posix.dirname(parent);
+      parent = path7.posix.dirname(parent);
     }
   }
   return entries;
@@ -72774,7 +73917,7 @@ function validateArchiveListing(listing, expected) {
   const seen = /* @__PURE__ */ new Set();
   for (const rawLine of listing.split("\n").filter(Boolean)) {
     const line = normalizedArchiveEntry(rawLine);
-    if (path6.isAbsolute(line)) {
+    if (path7.isAbsolute(line)) {
       throw new ResearchStewardError("ARCHIVE_ABSOLUTE_PATH", `Archive contains absolute path: ${line}`);
     }
     const components = line.split("/");
@@ -72799,9 +73942,9 @@ function validateArchiveListing(listing, expected) {
 }
 async function inspectExtractedTree(directory, relative = "", entries = /* @__PURE__ */ new Set(), inodes = /* @__PURE__ */ new Set()) {
   if (relative === "") entries.add("");
-  for (const entry of await readdir2(directory, { withFileTypes: true })) {
+  for (const entry of await readdir3(directory, { withFileTypes: true })) {
     const childRelative = relative ? `${relative}/${entry.name}` : entry.name;
-    const child = path6.join(directory, entry.name);
+    const child = path7.join(directory, entry.name);
     const info = await lstat2(child);
     if (info.isSymbolicLink()) {
       throw new ResearchStewardError(
@@ -72833,11 +73976,11 @@ async function inspectExtractedTree(directory, relative = "", entries = /* @__PU
   return entries;
 }
 async function cleanRoomVerify(archivePath, expected) {
-  const listing = await runTar(["-tzf", archivePath], path6.dirname(archivePath));
+  const listing = await runTar(["-tzf", archivePath], path7.dirname(archivePath));
   validateArchiveListing(listing, expected);
-  const cleanRoot = await mkdtemp2(path6.join(os2.tmpdir(), "research-steward-handoff-"));
+  const cleanRoot = await mkdtemp2(path7.join(os2.tmpdir(), "research-steward-handoff-"));
   try {
-    await runTar(["-xzf", archivePath, "-C", cleanRoot], path6.dirname(archivePath));
+    await runTar(["-xzf", archivePath, "-C", cleanRoot], path7.dirname(archivePath));
     const extractedEntries = await inspectExtractedTree(cleanRoot);
     const expectedEntries = expectedArchiveEntries(expected);
     if (stableJson([...extractedEntries].sort()) !== stableJson([...expectedEntries].sort())) {
@@ -72847,7 +73990,7 @@ async function cleanRoomVerify(archivePath, expected) {
       );
     }
     const parsed = InternalManifestSchema.parse(
-      (0, import_yaml2.parse)(await readFile4(path6.join(cleanRoot, "HANDOFF_MANIFEST.yaml"), "utf8"))
+      (0, import_yaml2.parse)(await readFile5(path7.join(cleanRoot, "HANDOFF_MANIFEST.yaml"), "utf8"))
     );
     if (stableJson(parsed) !== stableJson(expected)) {
       throw new ResearchStewardError(
@@ -72856,14 +73999,14 @@ async function cleanRoomVerify(archivePath, expected) {
       );
     }
     for (const file2 of expected.files) {
-      const extracted = path6.join(cleanRoot, "payload", file2.path);
-      const [info, hash2] = await Promise.all([stat4(extracted), sha256File(extracted)]);
+      const extracted = path7.join(cleanRoot, "payload", file2.path);
+      const [info, hash2] = await Promise.all([stat5(extracted), sha256File(extracted)]);
       if (!info.isFile() || info.size !== file2.size || hash2 !== file2.sha256) {
         throw new ResearchStewardError("HANDOFF_FILE_MISMATCH", `Extracted handoff file failed verification: ${file2.path}`);
       }
     }
   } finally {
-    await rm5(cleanRoot, { recursive: true, force: true });
+    await rm6(cleanRoot, { recursive: true, force: true });
   }
 }
 async function resolvePackageProvenance(root, requestedPaths) {
@@ -72965,7 +74108,7 @@ async function finalizePublishedPackage(root, archivePath, journal) {
     }
   };
   await atomicWriteFile(
-    path6.join(root, "HANDOFF_MANIFEST.yaml"),
+    path7.join(root, "HANDOFF_MANIFEST.yaml"),
     (0, import_yaml2.stringify)(canonicalManifest, { lineWidth: 0 })
   );
   const events = await readEvents(root);
@@ -72997,7 +74140,7 @@ async function finalizePublishedPackage(root, archivePath, journal) {
   }
   return {
     package_id: journal.internal.package_id,
-    archive_path: path6.relative(root, archivePath).split(path6.sep).join("/"),
+    archive_path: path7.relative(root, archivePath).split(path7.sep).join("/"),
     archive_sha256: journal.archive_sha256,
     files: journal.internal.files,
     clean_room_verified: true
@@ -73005,7 +74148,7 @@ async function finalizePublishedPackage(root, archivePath, journal) {
 }
 async function recoverPublishedPackage(root, archivePath, journalPath, packageId, requestedPaths) {
   const journal = PackageJournalSchema.parse(
-    JSON.parse(await readFile4(journalPath, "utf8"))
+    JSON.parse(await readFile5(journalPath, "utf8"))
   );
   if (journal.internal.package_id !== packageId || stableJson(journal.internal.files.map((file2) => file2.path).sort()) !== stableJson([...requestedPaths].sort())) {
     throw new ResearchStewardError(
@@ -73043,7 +74186,7 @@ async function packageHandoffLocked(root, packageId, requestedPaths) {
     ".research/manifest.json"
   );
   const manifestRaw = JSON.parse(
-    await readFile4(projectManifestPath, "utf8")
+    await readFile5(projectManifestPath, "utf8")
   );
   if (typeof manifestRaw.project_id !== "string" || !/^[0-9a-f-]{36}$/i.test(manifestRaw.project_id)) {
     throw new ResearchStewardError("INVALID_MANIFEST", "Project manifest has no project ID.");
@@ -73059,7 +74202,7 @@ async function packageHandoffLocked(root, packageId, requestedPaths) {
   );
   let archiveExists = false;
   try {
-    await stat4(archivePath);
+    await stat5(archivePath);
     archiveExists = true;
   } catch (error61) {
     if (error61.code !== "ENOENT") throw error61;
@@ -73085,14 +74228,14 @@ async function packageHandoffLocked(root, packageId, requestedPaths) {
   }
   const { provenance, packet } = await resolvePackageProvenance(root, requestedPaths);
   const packetFiles = new Map(packet.files.map((file2) => [file2.path, file2]));
-  const stagingName = `.${packageId}.${randomUUID5()}.tmp`;
+  const stagingName = `.${packageId}.${randomUUID6()}.tmp`;
   const staging = await ensurePrivateDirectoryInside(
     root,
     `.research/packages/${stagingName}`
   );
   const temporaryArchive = await resolvePrivateDestinationInside(
     root,
-    `.research/packages/.${packageId}.${randomUUID5()}.tar.gz.tmp`
+    `.research/packages/.${packageId}.${randomUUID6()}.tar.gz.tmp`
   );
   let archiveCommitted = false;
   await ensurePrivateDirectoryInside(root, `.research/packages/${stagingName}/payload`);
@@ -73124,16 +74267,16 @@ async function packageHandoffLocked(root, packageId, requestedPaths) {
         root,
         `.research/frozen/${packet.packet_id}/files/${relativePath}`
       );
-      const info = await stat4(source);
+      const info = await stat5(source);
       if (!info.isFile()) {
         throw new ResearchStewardError("PACKAGE_NOT_FILE", `Handoff entry is not a regular file: ${relativePath}`);
       }
-      const destination = path6.join(staging, "payload", relativePath);
-      await mkdir5(path6.dirname(destination), { recursive: true, mode: 448 });
+      const destination = path7.join(staging, "payload", relativePath);
+      await mkdir5(path7.dirname(destination), { recursive: true, mode: 448 });
       await copyFile2(source, destination);
       const [copiedHash, copiedInfo] = await Promise.all([
         sha256File(destination),
-        stat4(destination)
+        stat5(destination)
       ]);
       if (copiedHash !== expected.sha256 || copiedInfo.size !== expected.size) {
         throw new ResearchStewardError(
@@ -73142,7 +74285,7 @@ async function packageHandoffLocked(root, packageId, requestedPaths) {
         );
       }
       files.push({
-        path: relativePath.split(path6.sep).join("/"),
+        path: relativePath.split(path7.sep).join("/"),
         size: copiedInfo.size,
         sha256: copiedHash
       });
@@ -73164,7 +74307,7 @@ async function packageHandoffLocked(root, packageId, requestedPaths) {
       ]
     });
     await atomicWriteFile(
-      path6.join(staging, "HANDOFF_MANIFEST.yaml"),
+      path7.join(staging, "HANDOFF_MANIFEST.yaml"),
       (0, import_yaml2.stringify)(internal, { lineWidth: 0 })
     );
     await runTar(["-czf", temporaryArchive, "-C", staging, "."], root);
@@ -73179,7 +74322,7 @@ async function packageHandoffLocked(root, packageId, requestedPaths) {
     }
     const journal = PackageJournalSchema.parse({
       version: 1,
-      archive_path: path6.relative(root, archivePath).split(path6.sep).join("/"),
+      archive_path: path7.relative(root, archivePath).split(path7.sep).join("/"),
       archive_sha256: archiveHash,
       internal
     });
@@ -73204,15 +74347,15 @@ async function packageHandoffLocked(root, packageId, requestedPaths) {
         "The verified archive was published, but metadata finalization failed; the archive was preserved.",
         {
           package_id: packageId,
-          archive_path: path6.relative(root, archivePath).split(path6.sep).join("/"),
+          archive_path: path7.relative(root, archivePath).split(path7.sep).join("/"),
           cause_code: error61 instanceof ResearchStewardError ? error61.code : "unknown"
         }
       );
     }
     throw error61;
   } finally {
-    await rm5(temporaryArchive, { force: true }).catch(() => void 0);
-    await rm5(staging, { recursive: true, force: true }).catch(() => void 0);
+    await rm6(temporaryArchive, { force: true }).catch(() => void 0);
+    await rm6(staging, { recursive: true, force: true }).catch(() => void 0);
   }
 }
 
@@ -73642,6 +74785,112 @@ function buildServer(policy) {
     },
     async ({ project_root, package_id, files }) => withProject(policy, project_root, (root) => packageHandoff(root, package_id, files))
   );
+  server.registerTool(
+    "research_doctor",
+    {
+      title: "Run Research Steward Doctor",
+      description: "Run zero-cost capability checks: runtime, bundles, schemas, skills, MCP manifest, optional project root, provider executables, and route/token boundaries. Provider auth is never probed with paid calls; it reports skipped with a manual command instead.",
+      inputSchema: {
+        project_root: external_exports.string().min(1).max(4096).optional()
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ project_root }) => {
+      try {
+        const report = await runDoctor(
+          project_root === void 0 ? {} : { projectRoot: await policy.resolveProject(project_root) }
+        );
+        return jsonResult(report);
+      } catch (error61) {
+        return toolError(error61);
+      }
+    }
+  );
+  server.registerTool(
+    "research_build_plan",
+    {
+      title: "Build Roundtable Plan From Preset",
+      description: "Preview a roundtable plan and immutable workflow lock from a named preset with explicit overrides. Writing to disk requires write=true plus a project root and relative paths, and never overwrites existing files.",
+      inputSchema: {
+        preset_id: external_exports.string().min(1).max(100),
+        packet_id: external_exports.string().min(1).max(64),
+        mode: external_exports.enum(["open", "blind", "mixed"]).optional(),
+        adapters: external_exports.record(external_exports.string(), external_exports.string()).optional(),
+        models: external_exports.record(external_exports.string(), external_exports.string()).optional(),
+        briefs: external_exports.record(external_exports.string(), external_exports.string()).optional(),
+        write: external_exports.boolean().default(false),
+        project_root: external_exports.string().min(1).max(4096).optional(),
+        plan_path: external_exports.string().min(1).max(4096).optional(),
+        lock_path: external_exports.string().min(1).max(4096).optional()
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false
+      }
+    },
+    async (input2) => {
+      try {
+        const built = buildPlan({
+          preset_id: input2.preset_id,
+          packet_id: input2.packet_id,
+          overrides: {
+            ...input2.mode ? { mode: input2.mode } : {},
+            ...input2.adapters ? { adapters: input2.adapters } : {},
+            ...input2.models ? { models: input2.models } : {},
+            ...input2.briefs ? { briefs: input2.briefs } : {}
+          }
+        });
+        if (!input2.write) {
+          return jsonResult({ ...built, written: false });
+        }
+        if (!input2.project_root || !input2.plan_path || !input2.lock_path) {
+          throw new ResearchStewardError(
+            "PLAN_WRITE_REQUIRES_PROJECT",
+            "write=true requires project_root plus relative plan_path and lock_path."
+          );
+        }
+        const root = await policy.resolveProject(input2.project_root);
+        const planDestination = await resolveDestinationInside(root, input2.plan_path);
+        const lockDestination = await resolveDestinationInside(root, input2.lock_path);
+        await writeImmutableFile(planDestination, `${JSON.stringify(built.plan, null, 2)}
+`);
+        await writeLock(lockDestination, built.lock);
+        return jsonResult({ ...built, written: true });
+      } catch (error61) {
+        return toolError(error61);
+      }
+    }
+  );
+  server.registerTool(
+    "research_dry_run",
+    {
+      title: "Forecast Roundtable Cost and Risk",
+      description: "Compute a pure dry-run forecast for a roundtable plan: invocation upper bounds, provider routes, prompt/output budgets, wall-time bound, and blocking route warnings. Never starts providers and never writes events.",
+      inputSchema: {
+        plan: external_exports.unknown()
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ plan }) => {
+      try {
+        return jsonResult(buildForecast(plan));
+      } catch (error61) {
+        return toolError(error61);
+      }
+    }
+  );
   server.registerResource(
     "research-steward-state-machine",
     "research-steward://protocol/state-machine",
@@ -73664,7 +74913,7 @@ function buildServer(policy) {
 }
 async function configuredPolicy() {
   const policy = new RootPolicy();
-  const configured = (process.env["RESEARCH_STEWARD_ROOTS"] ?? "").split(path7.delimiter).map((item) => item.trim()).filter(Boolean);
+  const configured = (process.env["RESEARCH_STEWARD_ROOTS"] ?? "").split(path8.delimiter).map((item) => item.trim()).filter(Boolean);
   if (configured.length > 0) await policy.setRoots(configured);
   return policy;
 }
@@ -73673,7 +74922,7 @@ async function attachClientRoots(server, policy) {
   const capabilities = server.server.getClientCapabilities();
   if (!capabilities?.roots) return;
   const response = await server.server.listRoots();
-  const roots = response.roots.filter((root) => root.uri.startsWith("file:")).map((root) => fileURLToPath(root.uri));
+  const roots = response.roots.filter((root) => root.uri.startsWith("file:")).map((root) => fileURLToPath2(root.uri));
   if (roots.length > 0) await policy.setRoots(roots);
 }
 async function runStdioServer() {
@@ -73693,13 +74942,13 @@ function constantTimeTokenMatches(expected, supplied) {
   const right = Buffer.from(supplied);
   return left.length === right.length && timingSafeEqual(left, right);
 }
-function isStrongHttpToken(token) {
+function isStrongHttpToken2(token) {
   if (token.length > 256 || /(replace|change|example|password|token)/i.test(token)) return false;
   return /^[a-fA-F0-9]{64,}$/.test(token) || /^[A-Za-z0-9_-]{43,}$/.test(token);
 }
 async function runHttpServer() {
   const token = process.env["RESEARCH_STEWARD_HTTP_TOKEN"] ?? "";
-  if (!isStrongHttpToken(token)) {
+  if (!isStrongHttpToken2(token)) {
     throw new ResearchStewardError(
       "HTTP_TOKEN_REQUIRED",
       "HTTP mode requires a non-placeholder 256-bit hex or 43+ character base64url bearer token."

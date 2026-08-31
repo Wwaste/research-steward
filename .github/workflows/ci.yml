@@ -22,7 +22,7 @@ jobs:
           cache: npm
           cache-dependency-path: plugins/research-steward/package-lock.json
       - run: npm ci
-      - run: npm run check
+      - run: npm run typecheck
       - run: npm run test:coverage
       - run: npm audit --audit-level=moderate
   distribution:
@@ -42,6 +42,8 @@ jobs:
         run: npm run build
       - name: bundle-identity
         run: git diff --exit-code -- dist schemas
+      - name: no-untracked-bundles
+        run: test -z "$(git status --porcelain -- dist schemas)"
       - name: installed-smoke
         run: node scripts/smoke-installed-plugin.mjs
       - run: node scripts/smoke-client-roots.mjs

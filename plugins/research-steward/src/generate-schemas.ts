@@ -5,6 +5,9 @@ import {
   ProjectManifestSchema,
   RoundtablePlanSchema
 } from "./protocol.js";
+import { DoctorReportSchema } from "./doctor.js";
+import { WorkflowLockSchema } from "./planner.js";
+import { ForecastSchema } from "./forecast.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -82,6 +85,31 @@ export async function generateSchemas(): Promise<void> {
         RoundtablePlanSchema,
         "roundtable-plan.schema.json",
         "Research Steward roundtable DAG plan",
+        true
+      )
+    ]
+    ,[
+      "schemas/doctor-report.schema.json",
+      publicSchema(
+        DoctorReportSchema,
+        "doctor-report.schema.json",
+        "Research Steward doctor report"
+      )
+    ],
+    [
+      "schemas/workflow-lock.schema.json",
+      publicSchema(
+        WorkflowLockSchema,
+        "workflow-lock.schema.json",
+        "Research Steward workflow lock"
+      )
+    ],
+    [
+      "schemas/forecast.schema.json",
+      publicSchema(
+        ForecastSchema,
+        "forecast.schema.json",
+        "Research Steward dry-run forecast",
         true
       )
     ]

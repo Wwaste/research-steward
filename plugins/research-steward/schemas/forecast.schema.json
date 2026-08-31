@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "forecast_version": {
+      "type": "number",
+      "const": 1
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+    },
+    "plan_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "node_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 32
+    },
+    "max_parallel_width": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8
+    },
+    "worst_case_invocations": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "fake_invocations": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "per_provider": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 50
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "nodes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "worst_case_invocations": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "route": {
+            "type": "string",
+            "enum": [
+              "subscription_cli",
+              "fake"
+            ]
+          }
+        },
+        "required": [
+          "nodes",
+          "worst_case_invocations",
+          "route"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "prompt_char_upper_bound": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "output_char_upper_bound": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "wall_time_upper_bound_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "wall_time_bound_source": {
+      "type": "string",
+      "enum": [
+        "limits.max_wall_time_ms",
+        "critical_path_estimate"
+      ]
+    },
+    "warnings": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "blocking"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "message"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "forecast_version",
+    "created_at",
+    "plan_hash",
+    "node_count",
+    "max_parallel_width",
+    "worst_case_invocations",
+    "fake_invocations",
+    "per_provider",
+    "prompt_char_upper_bound",
+    "output_char_upper_bound",
+    "wall_time_upper_bound_ms",
+    "wall_time_bound_source",
+    "warnings"
+  ],
+  "additionalProperties": false,
+  "$id": "https://github.com/Wwaste/research-steward/schemas/forecast.schema.json",
+  "title": "Research Steward dry-run forecast"
+}

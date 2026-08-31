@@ -2,7 +2,7 @@
  * Roundtable presets for the v0.2 planner (Task 1.3).
  *
  * Authority choice: these TypeScript constants are the single source of truth.
- * The JSON files under presets/ are generated from this module, and
+ * The JSON files under presets/ are hand-synchronized with this module, and
  * tests/planner.test.ts asserts that every presets/<id>.json deep-equals the
  * matching constant here, so any drift between the two fails the test run
  * instead of silently forking the data.

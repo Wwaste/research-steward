@@ -6,7 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { RootPolicy } from "./paths.js";
+import { RootPolicy, resolveDestinationInside } from "./paths.js";
 import {
   appendEvent,
   freezePacket,
@@ -21,9 +21,12 @@ import {
   verifyProject
 } from "./store.js";
 import { runRoundtable } from "./workflow.js";
+import { runDoctor } from "./doctor.js";
+import { buildPlan, writeLock } from "./planner.js";
+import { buildForecast } from "./forecast.js";
 import { packageHandoff } from "./package.js";
 import { EvidenceSchema, FindingSchema } from "./protocol.js";
-import { ResearchStewardError, errorMessage } from "./utils.js";
+import { ResearchStewardError, errorMessage, writeImmutableFile } from "./utils.js";
 
 const SERVER_NAME = "research-steward-mcp-server";
 const SERVER_VERSION = "0.1.0";
@@ -511,6 +514,119 @@ export function buildServer(policy: RootPolicy): McpServer {
     },
     async ({ project_root, package_id, files }) =>
       withProject(policy, project_root, (root) => packageHandoff(root, package_id, files))
+  );
+
+  server.registerTool(
+    "research_doctor",
+    {
+      title: "Run Research Steward Doctor",
+      description:
+        "Run zero-cost capability checks: runtime, bundles, schemas, skills, MCP manifest, optional project root, provider executables, and route/token boundaries. Provider auth is never probed with paid calls; it reports skipped with a manual command instead.",
+      inputSchema: {
+        project_root: z.string().min(1).max(4_096).optional()
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ project_root }) => {
+      try {
+        const report = await runDoctor(
+          project_root === undefined
+            ? {}
+            : { projectRoot: await policy.resolveProject(project_root) }
+        );
+        return jsonResult(report);
+      } catch (error) {
+        return toolError(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    "research_build_plan",
+    {
+      title: "Build Roundtable Plan From Preset",
+      description:
+        "Preview a roundtable plan and immutable workflow lock from a named preset with explicit overrides. Writing to disk requires write=true plus a project root and relative paths, and never overwrites existing files.",
+      inputSchema: {
+        preset_id: z.string().min(1).max(100),
+        packet_id: z.string().min(1).max(64),
+        mode: z.enum(["open", "blind", "mixed"]).optional(),
+        adapters: z.record(z.string(), z.string()).optional(),
+        models: z.record(z.string(), z.string()).optional(),
+        briefs: z.record(z.string(), z.string()).optional(),
+        write: z.boolean().default(false),
+        project_root: z.string().min(1).max(4_096).optional(),
+        plan_path: z.string().min(1).max(4_096).optional(),
+        lock_path: z.string().min(1).max(4_096).optional()
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false
+      }
+    },
+    async (input) => {
+      try {
+        const built = buildPlan({
+          preset_id: input.preset_id,
+          packet_id: input.packet_id,
+          overrides: {
+            ...(input.mode ? { mode: input.mode } : {}),
+            ...(input.adapters ? { adapters: input.adapters } : {}),
+            ...(input.models ? { models: input.models } : {}),
+            ...(input.briefs ? { briefs: input.briefs } : {})
+          }
+        } as Parameters<typeof buildPlan>[0]);
+        if (!input.write) {
+          return jsonResult({ ...built, written: false });
+        }
+        if (!input.project_root || !input.plan_path || !input.lock_path) {
+          throw new ResearchStewardError(
+            "PLAN_WRITE_REQUIRES_PROJECT",
+            "write=true requires project_root plus relative plan_path and lock_path."
+          );
+        }
+        const root = await policy.resolveProject(input.project_root);
+        const planDestination = await resolveDestinationInside(root, input.plan_path);
+        const lockDestination = await resolveDestinationInside(root, input.lock_path);
+        await writeImmutableFile(planDestination, `${JSON.stringify(built.plan, null, 2)}\n`);
+        await writeLock(lockDestination, built.lock);
+        return jsonResult({ ...built, written: true });
+      } catch (error) {
+        return toolError(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    "research_dry_run",
+    {
+      title: "Forecast Roundtable Cost and Risk",
+      description:
+        "Compute a pure dry-run forecast for a roundtable plan: invocation upper bounds, provider routes, prompt/output budgets, wall-time bound, and blocking route warnings. Never starts providers and never writes events.",
+      inputSchema: {
+        plan: z.unknown()
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async ({ plan }) => {
+      try {
+        return jsonResult(buildForecast(plan));
+      } catch (error) {
+        return toolError(error);
+      }
+    }
   );
 
   server.registerResource(

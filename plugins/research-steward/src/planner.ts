@@ -8,6 +8,7 @@
  */
 
 import { z } from "zod";
+import { validateGraph } from "./workflow.js";
 import {
   RoundtablePlanSchema,
   type RoundtableNode,
@@ -113,134 +114,11 @@ export type PlanOverrides = z.infer<typeof OverridesSchema>;
  * and replace this copy with that import, so the two can never drift.
  */
 export function validatePlanStructure(plan: RoundtablePlan): void {
-  const nodes = new Map(plan.nodes.map((node) => [node.id, node]));
-  if (nodes.size !== plan.nodes.length) {
-    throw new ResearchStewardError("DUPLICATE_NODE", "Roundtable node IDs must be unique.");
-  }
-  const blindNodes = plan.nodes.filter((node) => node.visibility === "blind");
-  if (plan.mode === "open" && blindNodes.length > 0) {
-    throw new ResearchStewardError(
-      "OPEN_MODE_HAS_BLIND_NODE",
-      "An open roundtable cannot contain blind nodes."
-    );
-  }
-  if (plan.mode === "blind" && blindNodes.length === 0) {
-    throw new ResearchStewardError(
-      "BLIND_MODE_WITHOUT_BLIND_REVIEW",
-      "A blind roundtable must contain a blind review group."
-    );
-  }
-  if (
-    plan.mode === "mixed" &&
-    (blindNodes.length === 0 || blindNodes.length === plan.nodes.length)
-  ) {
-    throw new ResearchStewardError(
-      "MIXED_MODE_VISIBILITY_REQUIRED",
-      "A mixed roundtable must contain both blind and non-blind nodes."
-    );
-  }
-  const blindGroupCounts = new Map<string, number>();
-  for (const node of blindNodes) {
-    if (node.blind_group) {
-      blindGroupCounts.set(node.blind_group, (blindGroupCounts.get(node.blind_group) ?? 0) + 1);
-    }
-  }
-  for (const [group, count] of blindGroupCounts) {
-    if (count < 2) {
-      throw new ResearchStewardError(
-        "BLIND_GROUP_TOO_SMALL",
-        `Blind group ${group} must contain at least two independent peers.`
-      );
-    }
-  }
-
-  for (const node of plan.nodes) {
-    if (node.visibility === "blind" && node.blind_group === undefined) {
-      throw new ResearchStewardError(
-        "BLIND_GROUP_REQUIRED",
-        `Blind node ${node.id} must name a blind_group.`
-      );
-    }
-    if (node.visibility === "blind" && node.adapter === "kimi") {
-      throw new ResearchStewardError(
-        "BLIND_ADAPTER_UNSAFE",
-        `Node ${node.id} uses Kimi, whose current CLI cannot prove a deny-tools blind boundary. Use it only in an open/shared lane.`
-      );
-    }
-    if (node.blind_group !== undefined && node.visibility !== "blind") {
-      throw new ResearchStewardError(
-        "BLIND_VISIBILITY_REQUIRED",
-        `Node ${node.id} names a blind_group but is not blind.`
-      );
-    }
-    if (node.can_adjudicate && node.depends_on.length === 0) {
-      throw new ResearchStewardError(
-        "ADJUDICATOR_WITHOUT_INPUT",
-        `Adjudicator node ${node.id} must depend on at least one committed contribution.`
-      );
-    }
-    for (const dependency of node.depends_on) {
-      const upstream = nodes.get(dependency);
-      if (!upstream) {
-        throw new ResearchStewardError(
-          "UNKNOWN_DEPENDENCY",
-          `Node ${node.id} depends on unknown node ${dependency}.`
-        );
-      }
-      if (
-        node.blind_group !== undefined &&
-        upstream.blind_group !== undefined &&
-        node.blind_group === upstream.blind_group
-      ) {
-        throw new ResearchStewardError(
-          "BLINDNESS_VIOLATION",
-          `Blind peers ${node.id} and ${upstream.id} cannot depend on one another.`
-        );
-      }
-      if (upstream.visibility === "private" && upstream.actor_id !== node.actor_id) {
-        throw new ResearchStewardError(
-          "PRIVATE_DEPENDENCY",
-          `Node ${node.id} cannot read private output owned by ${upstream.actor_id}.`
-        );
-      }
-    }
-    const referencedBlindGroups = new Set(
-      node.depends_on
-        .map((dependency) => nodes.get(dependency)?.blind_group)
-        .filter((group): group is string => group !== undefined)
-    );
-    for (const group of referencedBlindGroups) {
-      const required = plan.nodes
-        .filter((candidate) => candidate.blind_group === group)
-        .map((candidate) => candidate.id);
-      const missing = required.filter((candidateId) => !node.depends_on.includes(candidateId));
-      if (missing.length > 0) {
-        throw new ResearchStewardError(
-          "PARTIAL_BLIND_GROUP_DEPENDENCY",
-          `Node ${node.id} must depend on every member of blind group ${group}; missing ${missing.join(", ")}.`
-        );
-      }
-    }
-  }
-
-  const temporary = new Set<string>();
-  const permanent = new Set<string>();
-  const visit = (nodeId: string): void => {
-    if (permanent.has(nodeId)) return;
-    if (temporary.has(nodeId)) {
-      throw new ResearchStewardError(
-        "CYCLIC_PLAN",
-        "Roundtable plan must be a directed acyclic graph."
-      );
-    }
-    temporary.add(nodeId);
-    const node = nodes.get(nodeId);
-    if (!node) throw new ResearchStewardError("UNKNOWN_NODE", nodeId);
-    for (const dependency of node.depends_on) visit(dependency);
-    temporary.delete(nodeId);
-    permanent.add(nodeId);
-  };
-  for (const node of plan.nodes) visit(node.id);
+  // Wiring batch: delegate to the workflow scheduler's own exported graph
+  // validator so planner-side structural rules can never drift from runtime
+  // enforcement. The temporary local copy that existed while validateGraph
+  // was unexported has been removed.
+  validateGraph(plan);
 }
 
 function assertKnownNodeIds(

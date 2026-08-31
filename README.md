@@ -129,6 +129,31 @@ node dist/cli.mjs freeze --project /path/to/project --packet candidate-v2 \
 
 Superseded packets still undergo frozen-byte integrity checks. Only active packets undergo current-source freshness checks and become dependencies of the next verification.
 
+## Doctor, presets, and dry-run
+
+Before spending any model budget, check the environment, build a plan from a
+preset, and preview its worst-case cost:
+
+```bash
+node dist/cli.mjs doctor --project /path/to/project
+node dist/cli.mjs build-plan --preset quick-review --packet protocol-v1 \
+  --write-plan quick.plan.json --write-lock quick.lock.json
+node dist/cli.mjs dry-run --plan quick.plan.json
+```
+
+`doctor` runs zero-cost checks only; provider authentication is reported as
+`skipped` with a manual verification command rather than probed with a paid
+call. `build-plan` ships seven presets (`quick-review`, `blind-triad`,
+`full-panel`, `producer-reviewer-revision`, `manuscript-strict`,
+`figure-audit`, `code-science-audit`) and writes an immutable
+`workflow.lock.json` recording preset version, provider routes, and
+capability gaps. `dry-run` never starts a provider and never writes events;
+it reports invocation upper bounds, prompt/output budgets, a wall-time bound,
+and blocking warnings for any metered or unknown route. The same three
+operations are exposed over MCP as `research_doctor`, `research_build_plan`
+(preview by default; writing requires explicit paths inside the project), and
+`research_dry_run`.
+
 ## Model adapters and cost boundary
 
 | Adapter | Intended route | Safety behavior |

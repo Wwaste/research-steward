@@ -43,7 +43,7 @@ export interface WorkflowResult {
   event_ids: string[];
 }
 
-function validateGraph(plan: RoundtablePlan): void {
+export function validateGraph(plan: RoundtablePlan): void {
   const nodes = new Map(plan.nodes.map((node) => [node.id, node]));
   if (nodes.size !== plan.nodes.length) {
     throw new ResearchStewardError("DUPLICATE_NODE", "Roundtable node IDs must be unique.");

@@ -17,7 +17,10 @@ import {
 import { runRoundtable } from "./workflow.js";
 import { runHttpServer } from "./server.js";
 import { packageHandoff } from "./package.js";
-import { errorMessage } from "./utils.js";
+import { errorMessage, writeImmutableFile } from "./utils.js";
+import { runDoctor } from "./doctor.js";
+import { buildPlan, writeLock } from "./planner.js";
+import { buildForecast, writeForecast } from "./forecast.js";
 
 interface ParsedArguments {
   command: string;
@@ -73,6 +76,9 @@ Usage:
   research-steward resolve-block --project <dir> --actor <id> --event <uuid> [--event <uuid>] --note <text>
   research-steward package --project <dir> --package <id> --file <relative> [--file <relative>]
   research-steward serve-http
+  research-steward doctor [--project <dir>]
+  research-steward build-plan --preset <id> --packet <id> [--mode <mode>] [--adapter node=adapter] [--model node=model] [--brief node=text] [--write-plan <path>] [--write-lock <path>]
+  research-steward dry-run --plan <plan.json> [--out <forecast-path>]
 
 The CLI grants exactly the --project directory for that invocation. MCP mode
 instead uses client roots or RESEARCH_STEWARD_ROOTS.
@@ -94,6 +100,64 @@ async function main(): Promise<void> {
   }
   if (parsed.command === "serve-http") {
     await runHttpServer();
+    return;
+  }
+  if (parsed.command === "doctor") {
+    const report = await runDoctor(
+      parsed.flags.has("project")
+        ? { projectRoot: (await grantedRoot(one(parsed.flags, "project"))).root }
+        : {}
+    );
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    if (report.overall === "fail") process.exitCode = 1;
+    return;
+  }
+  if (parsed.command === "build-plan") {
+    const pairs = (name: string): Record<string, string> =>
+      Object.fromEntries(
+        all(parsed.flags, name).map((entry) => {
+          const separator = entry.indexOf("=");
+          if (separator <= 0) throw new Error(`Expected --${name} node=value, got: ${entry}`);
+          return [entry.slice(0, separator), entry.slice(separator + 1)];
+        })
+      );
+    const adapters = pairs("adapter");
+    const models = pairs("model");
+    const briefs = pairs("brief");
+    const built = buildPlan({
+      preset_id: one(parsed.flags, "preset"),
+      packet_id: one(parsed.flags, "packet"),
+      overrides: {
+        ...(parsed.flags.has("mode") ? { mode: one(parsed.flags, "mode") } : {}),
+        ...(Object.keys(adapters).length > 0 ? { adapters } : {}),
+        ...(Object.keys(models).length > 0 ? { models } : {}),
+        ...(Object.keys(briefs).length > 0 ? { briefs } : {})
+      }
+    } as Parameters<typeof buildPlan>[0]);
+    if (parsed.flags.has("write-plan")) {
+      await writeImmutableFile(
+        path.resolve(one(parsed.flags, "write-plan")),
+        `${JSON.stringify(built.plan, null, 2)}\n`
+      );
+    }
+    if (parsed.flags.has("write-lock")) {
+      await writeLock(path.resolve(one(parsed.flags, "write-lock")), built.lock);
+    }
+    process.stdout.write(`${JSON.stringify(built, null, 2)}\n`);
+    return;
+  }
+  if (parsed.command === "dry-run") {
+    const rawPlan = JSON.parse(
+      await readFile(path.resolve(one(parsed.flags, "plan")), "utf8")
+    ) as unknown;
+    const forecast = buildForecast(rawPlan);
+    if (parsed.flags.has("out")) {
+      await writeForecast(path.resolve(one(parsed.flags, "out")), forecast);
+    }
+    process.stdout.write(`${JSON.stringify(forecast, null, 2)}\n`);
+    if (forecast.warnings.some((warning) => warning.severity === "blocking")) {
+      process.exitCode = 2;
+    }
     return;
   }
 
