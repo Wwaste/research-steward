@@ -25,7 +25,10 @@ const EXPECTED_TOOL_COUNT = 16;
 const SCHEMA_FILES = [
   "project-manifest.schema.json",
   "research-event.schema.json",
-  "roundtable-plan.schema.json"
+  "roundtable-plan.schema.json",
+  "doctor-report.schema.json",
+  "workflow-lock.schema.json",
+  "forecast.schema.json"
 ];
 
 function fail(message) {
