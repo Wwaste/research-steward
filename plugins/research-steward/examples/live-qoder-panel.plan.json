@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "name": "Live Qoder three-model protocol smoke test",
+  "packet_id": "protocol-v1",
+  "mode": "mixed",
+  "limits": {
+    "max_parallel": 2,
+    "max_wall_time_ms": 900000,
+    "max_prompt_chars": 30000,
+    "max_output_chars": 20000,
+    "retry_limit": 0,
+    "max_failures": 0
+  },
+  "nodes": [
+    {
+      "id": "glm-review",
+      "actor_id": "glm-reviewer",
+      "role": "method-contract reviewer",
+      "adapter": "qoder",
+      "model": "GLM-5.3-Flash",
+      "brief": "Review the frozen project contract. Identify one concrete strength, one workflow risk, and any uncertainty. Keep the result compact.",
+      "depends_on": [],
+      "visibility": "blind",
+      "blind_group": "qoder-peer-review",
+      "timeout_ms": 300000
+    },
+    {
+      "id": "qwen-review",
+      "actor_id": "qwen-reviewer",
+      "role": "clarity and usability reviewer",
+      "adapter": "qoder",
+      "model": "Qwen3.8-Flash",
+      "brief": "Review the frozen project contract independently. Identify one clarity issue, one practical improvement, and any uncertainty. Keep the result compact.",
+      "depends_on": [],
+      "visibility": "blind",
+      "blind_group": "qoder-peer-review",
+      "timeout_ms": 300000
+    },
+    {
+      "id": "qwen-adjudication",
+      "actor_id": "qwen-adjudicator",
+      "role": "evidence adjudicator",
+      "adapter": "qoder",
+      "model": "Qwen3.8-Max",
+      "brief": "Compare both frozen reviews. Do not vote. State which points are supported, conflicting, or deferred, and record explicit dispositions for every finding ID.",
+      "depends_on": ["glm-review", "qwen-review"],
+      "visibility": "shared",
+      "can_adjudicate": true,
+      "timeout_ms": 300000
+    }
+  ]
+}

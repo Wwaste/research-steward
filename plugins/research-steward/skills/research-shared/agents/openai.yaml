@@ -1,0 +1,5 @@
+interface:
+  display_name: "Research Shared"
+  short_description: "Help with Research Shared tasks"
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "research-steward": {
+      "title": "Research Steward",
+      "description": "Local-first frozen research workflow, multi-model review, adjudication, and verification.",
+      "cwd": ".",
+      "command": "node",
+      "args": ["./dist/server.mjs"],
+      "env_vars": ["RESEARCH_STEWARD_ROOTS"]
+    }
+  }
+}

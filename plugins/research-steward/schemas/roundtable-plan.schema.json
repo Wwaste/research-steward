@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "number",
+      "const": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "packet_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "allOf": [
+        {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$"
+        },
+        {
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        }
+      ]
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "open",
+        "blind",
+        "mixed"
+      ]
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "max_parallel": {
+          "default": 3,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "max_wall_time_ms": {
+          "default": 1800000,
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 7200000
+        },
+        "max_prompt_chars": {
+          "default": 120000,
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 500000
+        },
+        "max_output_chars": {
+          "default": 60000,
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 200000
+        },
+        "retry_limit": {
+          "default": 1,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "max_failures": {
+          "default": 3,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "nodes": {
+      "minItems": 1,
+      "maxItems": 32,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$"
+          },
+          "actor_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$"
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "adapter": {
+            "type": "string",
+            "enum": [
+              "kimi",
+              "qoder",
+              "grok",
+              "fake"
+            ]
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "brief": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000
+          },
+          "depends_on": {
+            "default": [],
+            "maxItems": 16,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$"
+            }
+          },
+          "visibility": {
+            "default": "shared",
+            "type": "string",
+            "enum": [
+              "shared",
+              "blind",
+              "private"
+            ]
+          },
+          "blind_group": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$"
+          },
+          "can_adjudicate": {
+            "default": false,
+            "type": "boolean"
+          },
+          "timeout_ms": {
+            "default": 300000,
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 1800000
+          }
+        },
+        "required": [
+          "id",
+          "actor_id",
+          "role",
+          "adapter",
+          "brief"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "version",
+    "name",
+    "packet_id",
+    "mode",
+    "limits",
+    "nodes"
+  ],
+  "additionalProperties": false,
+  "$id": "https://github.com/Wwaste/research-steward/schemas/roundtable-plan.schema.json",
+  "title": "Research Steward roundtable DAG plan"
+}

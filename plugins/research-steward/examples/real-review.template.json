@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "name": "Low-cost independent research review",
+  "packet_id": "replace-with-frozen-packet-id",
+  "mode": "blind",
+  "limits": {
+    "max_parallel": 3,
+    "max_wall_time_ms": 1200000,
+    "max_prompt_chars": 100000,
+    "max_output_chars": 40000,
+    "retry_limit": 1,
+    "max_failures": 1
+  },
+  "nodes": [
+    {
+      "id": "glm-methods",
+      "actor_id": "glm-methods",
+      "role": "methods reviewer",
+      "adapter": "qoder",
+      "model": "GLM-5.3-Flash",
+      "brief": "Audit method contracts, unsupported inference, and missing controls.",
+      "depends_on": [],
+      "visibility": "blind",
+      "blind_group": "peer-review",
+      "timeout_ms": 300000
+    },
+    {
+      "id": "qwen-evidence",
+      "actor_id": "qwen-evidence",
+      "role": "evidence reviewer",
+      "adapter": "qoder",
+      "model": "Qwen3.8-Max",
+      "brief": "Trace claims to supplied evidence and flag provenance gaps.",
+      "depends_on": [],
+      "visibility": "blind",
+      "blind_group": "peer-review",
+      "timeout_ms": 300000
+    },
+    {
+      "id": "grok-clarity",
+      "actor_id": "grok-clarity",
+      "role": "clarity and structure reviewer",
+      "adapter": "grok",
+      "model": "grok-4.6",
+      "brief": "Audit structure, ambiguity, and whether the artifact communicates scope and uncertainty.",
+      "depends_on": [],
+      "visibility": "blind",
+      "blind_group": "peer-review",
+      "timeout_ms": 300000
+    }
+  ]
+}

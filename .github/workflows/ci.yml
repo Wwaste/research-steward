@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plugins/research-steward
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: plugins/research-steward/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: git diff --exit-code -- dist schemas
+      - run: npm audit --audit-level=moderate
+      - run: node scripts/smoke-mcp.mjs
+      - run: node scripts/smoke-client-roots.mjs
+      - run: node scripts/smoke-http.mjs

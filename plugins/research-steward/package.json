@@ -1,0 +1,37 @@
+{
+  "name": "research-steward",
+  "version": "0.1.0",
+  "description": "Local-first research workflow protocol, CLI, and MCP server",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "research-steward": "./dist/cli.mjs"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "smoke:mcp": "node scripts/smoke-mcp.mjs",
+    "smoke:client-roots": "node scripts/smoke-client-roots.mjs",
+    "smoke:http": "node scripts/smoke-http.mjs",
+    "probe:http": "node scripts/check-http-endpoint.mjs",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "express": "5.1.0",
+    "yaml": "2.9.0",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.3",
+    "@types/node": "24.3.0",
+    "esbuild": "0.25.9",
+    "typescript": "5.9.2",
+    "vitest": "3.2.7"
+  }
+}

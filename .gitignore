@@ -1,0 +1,19 @@
+node_modules/
+dist/
+!plugins/research-steward/dist/
+!plugins/research-steward/dist/**
+plugins/research-steward/dist/*.map
+coverage/
+*.log
+*.tmp
+.DS_Store
+.research/
+*.tar.gz
+*.zip
+.env
+.env.*
+!.env.example
+
+# Internal review and operator handoff material is intentionally not public.
+/Made by Claude Code/
+/docs/HANDOFF_TO_CLAUDE_*.md

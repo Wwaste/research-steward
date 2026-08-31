@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "name": "GLM subscription plus deterministic adjudication smoke test",
+  "packet_id": "protocol-v1",
+  "mode": "open",
+  "limits": {
+    "max_parallel": 1,
+    "max_wall_time_ms": 480000,
+    "max_prompt_chars": 12000,
+    "max_output_chars": 12000,
+    "retry_limit": 0,
+    "max_failures": 0
+  },
+  "nodes": [
+    {
+      "id": "glm-review",
+      "actor_id": "glm-reviewer",
+      "role": "bounded protocol reviewer",
+      "adapter": "qoder",
+      "model": "GLM-5.3-Flash",
+      "brief": "Read the frozen note, report one concise evidence-linked workflow finding if warranted, state uncertainty, and return no decisions.",
+      "depends_on": [],
+      "visibility": "shared",
+      "timeout_ms": 300000
+    },
+    {
+      "id": "deterministic-adjudication",
+      "actor_id": "test-adjudicator",
+      "role": "test-only evidence adjudicator",
+      "adapter": "fake",
+      "brief": "Defer every upstream finding so the dependency and adjudication protocol can be validated without making a scientific judgment.",
+      "depends_on": ["glm-review"],
+      "visibility": "shared",
+      "can_adjudicate": true,
+      "timeout_ms": 5000
+    }
+  ]
+}

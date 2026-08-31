@@ -1,0 +1,40 @@
+[Unit]
+Description=Research Steward private MCP service
+After=network-online.target tailscaled.service
+Wants=network-online.target tailscaled.service
+
+[Service]
+Type=simple
+User=research-steward
+Group=research-steward
+WorkingDirectory=/opt/research-steward/current/plugins/research-steward
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/research-steward/research-steward.env
+ExecStartPre=/usr/bin/test -r /opt/research-steward/current/plugins/research-steward/dist/server.mjs
+ExecStart=/usr/bin/node /opt/research-steward/current/plugins/research-steward/dist/server.mjs --http
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/srv/research-steward/projects
+LimitNOFILE=4096
+MemoryMax=768M
+
+[Install]
+WantedBy=multi-user.target

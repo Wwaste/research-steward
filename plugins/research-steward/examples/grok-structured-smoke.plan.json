@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Grok subscription structured-output smoke test",
+  "packet_id": "grok-input",
+  "mode": "open",
+  "limits": {
+    "max_parallel": 1,
+    "max_wall_time_ms": 180000,
+    "max_prompt_chars": 10000,
+    "max_output_chars": 10000,
+    "retry_limit": 0,
+    "max_failures": 0
+  },
+  "nodes": [
+    {
+      "id": "grok-review",
+      "actor_id": "grok-reviewer",
+      "role": "bounded protocol reviewer",
+      "adapter": "grok",
+      "model": "grok-4.6",
+      "brief": "Read the frozen note, report exactly one concise finding if warranted, state uncertainty, and return no decisions.",
+      "depends_on": [],
+      "visibility": "shared",
+      "timeout_ms": 120000
+    }
+  ]
+}

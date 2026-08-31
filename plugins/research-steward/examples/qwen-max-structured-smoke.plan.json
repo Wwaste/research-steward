@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Qwen Max subscription structured-output smoke test",
+  "packet_id": "qwen-input",
+  "mode": "open",
+  "limits": {
+    "max_parallel": 1,
+    "max_wall_time_ms": 360000,
+    "max_prompt_chars": 10000,
+    "max_output_chars": 10000,
+    "retry_limit": 0,
+    "max_failures": 0
+  },
+  "nodes": [
+    {
+      "id": "qwen-review",
+      "actor_id": "qwen-reviewer",
+      "role": "bounded protocol reviewer",
+      "adapter": "qoder",
+      "model": "Qwen3.8-Max",
+      "brief": "Read the frozen note, report exactly one concise evidence-linked finding if warranted, state uncertainty, and return no decisions.",
+      "depends_on": [],
+      "visibility": "shared",
+      "timeout_ms": 300000
+    }
+  ]
+}

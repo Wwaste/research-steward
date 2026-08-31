@@ -1,0 +1,20 @@
+{
+  "name": "research-steward",
+  "interface": {
+    "displayName": "Research Steward"
+  },
+  "plugins": [
+    {
+      "name": "research-steward",
+      "source": {
+        "source": "local",
+        "path": "./plugins/research-steward"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

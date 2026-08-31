@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "name": "Research Steward independent implementation review",
+  "packet_id": "source-v4",
+  "mode": "mixed",
+  "limits": {
+    "max_parallel": 1,
+    "max_wall_time_ms": 1200000,
+    "max_prompt_chars": 70000,
+    "max_output_chars": 16000,
+    "retry_limit": 0,
+    "max_failures": 1
+  },
+  "nodes": [
+    {
+      "id": "security-review",
+      "actor_id": "grok-security-reviewer",
+      "role": "filesystem, process, and concurrency security reviewer",
+      "adapter": "grok",
+      "model": "grok-4.6",
+      "brief": "Review only the supplied frozen source. Find concrete path-boundary, concurrency, prompt-boundary, blindness, or secret-handling defects. Cite frozen paths and code fragments. Separate exploitable issues from hardening suggestions. Return no decisions.",
+      "depends_on": [],
+      "visibility": "blind",
+      "blind_group": "implementation-review",
+      "timeout_ms": 300000
+    },
+    {
+      "id": "protocol-review",
+      "actor_id": "qwen-protocol-reviewer",
+      "role": "protocol invariants and recovery reviewer",
+      "adapter": "qoder",
+      "model": "Qwen3.8-Max",
+      "brief": "Review only the supplied frozen source. Test the stated orchestration invariants: blind-review barriers, adjudication authority, dependency failure, failure-budget termination, recovery from committed node events, and preservation of dependency evidence under prompt limits. Cite frozen paths and code fragments. Return no decisions.",
+      "depends_on": [],
+      "visibility": "blind",
+      "blind_group": "implementation-review",
+      "timeout_ms": 300000
+    },
+    {
+      "id": "implementation-adjudication",
+      "actor_id": "qwen-implementation-adjudicator",
+      "role": "evidence-based implementation adjudicator",
+      "adapter": "qoder",
+      "model": "Qwen3.8-Max",
+      "brief": "Adjudicate every upstream finding against the frozen source. Do not use model agreement as evidence. For every finding ID, choose accept, partial, reject, or defer; cite exact frozen evidence; distinguish release blockers from later hardening; and state remaining uncertainty.",
+      "depends_on": ["security-review", "protocol-review"],
+      "visibility": "shared",
+      "can_adjudicate": true,
+      "timeout_ms": 300000
+    }
+  ]
+}

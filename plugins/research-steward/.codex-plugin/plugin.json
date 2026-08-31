@@ -1,0 +1,28 @@
+{
+  "name": "research-steward",
+  "version": "0.1.0",
+  "description": "Local-first, auditable research workflows with frozen evidence, multi-model review, adjudication, and verification.",
+  "author": {
+    "name": "Wwaste",
+    "url": "https://github.com/Wwaste"
+  },
+  "homepage": "https://github.com/Wwaste/research-steward",
+  "repository": "https://github.com/Wwaste/research-steward",
+  "license": "Apache-2.0",
+  "keywords": ["research", "multi-agent", "provenance", "review", "mcp"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Research Steward",
+    "shortDescription": "Auditable multi-model research operations.",
+    "longDescription": "Initialize durable research workspaces, freeze evidence packets, coordinate open or blind multi-model review, adjudicate findings, verify acceptance gates, and package traceable handoffs.",
+    "developerName": "Wwaste",
+    "category": "Productivity",
+    "capabilities": ["Local files", "Multi-model review", "Verification"],
+    "defaultPrompt": [
+      "Initialize an auditable research workspace here.",
+      "Run a blind review of this frozen evidence packet.",
+      "Verify this project and explain every failed gate."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "name": "Deterministic protocol demonstration",
+  "packet_id": "protocol-v1",
+  "mode": "mixed",
+  "limits": {
+    "max_parallel": 3,
+    "max_wall_time_ms": 60000,
+    "max_prompt_chars": 20000,
+    "max_output_chars": 10000,
+    "retry_limit": 0,
+    "max_failures": 0
+  },
+  "nodes": [
+    {
+      "id": "producer-draft",
+      "actor_id": "producer",
+      "role": "producer",
+      "adapter": "fake",
+      "brief": "Prepare the bounded candidate from the frozen packet.",
+      "depends_on": [],
+      "visibility": "shared",
+      "timeout_ms": 5000
+    },
+    {
+      "id": "methods-review",
+      "actor_id": "methods-reviewer",
+      "role": "methods critic",
+      "adapter": "fake",
+      "brief": "Review the producer output for method-contract violations.",
+      "depends_on": ["producer-draft"],
+      "visibility": "shared",
+      "timeout_ms": 5000
+    },
+    {
+      "id": "blind-review-a",
+      "actor_id": "reviewer-a",
+      "role": "independent evidence reviewer",
+      "adapter": "fake",
+      "brief": "Review independently and report evidence gaps.",
+      "depends_on": ["producer-draft"],
+      "visibility": "blind",
+      "blind_group": "peer-review",
+      "timeout_ms": 5000
+    },
+    {
+      "id": "blind-review-b",
+      "actor_id": "reviewer-b",
+      "role": "independent implementation reviewer",
+      "adapter": "fake",
+      "brief": "Review independently and report implementation risks.",
+      "depends_on": ["producer-draft"],
+      "visibility": "blind",
+      "blind_group": "peer-review",
+      "timeout_ms": 5000
+    },
+    {
+      "id": "adjudicator",
+      "actor_id": "adjudicator",
+      "role": "evidence adjudicator",
+      "adapter": "fake",
+      "brief": "Compare frozen reports and record explicit dispositions.",
+      "depends_on": ["methods-review", "blind-review-a", "blind-review-b"],
+      "visibility": "shared",
+      "can_adjudicate": true,
+      "timeout_ms": 5000
+    }
+  ]
+}
