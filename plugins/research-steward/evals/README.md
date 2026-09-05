@@ -18,6 +18,8 @@ finding 不要硬贴标签，放进 `expected.undecidable`，打分时会整体�
 `"fake_roundtable"`），不需要凭据、不产生任何费用，CI 里只允许跑这一类。
 当前的 smoke 集合：
 
+> **当前三个 smoke case 的 gold 标签是 `synthetic_expected_behavior`：由测试设计直接构造，尚未经过任何独立真人裁决。**在补齐真实冻结 fixture、逐 finding 定位、独立标注记录之前，不得把它们称为 human-adjudicated benchmark；`tests/eval-provenance.test.ts` 会机器强制这一点，同时拒绝任何个人邮箱进入公开 eval fixture。
+
 - `smoke-001-clean-panel.json`：两个必须命中的缺陷加一个诱饵负例。
 - `smoke-002-missed-critical.json`：盲审对照，含关键证据缺口和两个负例。
 - `smoke-003-undecidable.json`：刻意保留一个人工无法裁决的 finding，用来验证
