@@ -1,0 +1,76 @@
+{
+  "case_id": "smoke-003-undecidable",
+  "description": "Deliberately-undecidable case: one clear must-flag defect plus one finding whose ground truth the human adjudicators could not settle from the frozen evidence, so it is excluded from scoring by design.",
+  "input": {
+    "kind": "fake_roundtable",
+    "plan": {
+      "version": 1,
+      "name": "Smoke: undecidable boundary",
+      "packet_id": "protocol-v1",
+      "mode": "mixed",
+      "limits": {
+        "max_parallel": 2,
+        "max_wall_time_ms": 60000,
+        "max_prompt_chars": 20000,
+        "max_output_chars": 10000,
+        "retry_limit": 0,
+        "max_failures": 0
+      },
+      "nodes": [
+        {
+          "id": "producer-draft",
+          "actor_id": "producer",
+          "role": "producer",
+          "adapter": "fake",
+          "brief": "Prepare the bounded candidate from the frozen packet.",
+          "depends_on": [],
+          "visibility": "shared",
+          "timeout_ms": 5000
+        },
+        {
+          "id": "adjudicator",
+          "actor_id": "adjudicator",
+          "role": "evidence adjudicator",
+          "adapter": "fake",
+          "brief": "Compare frozen reports and record explicit dispositions.",
+          "depends_on": [
+            "producer-draft"
+          ],
+          "visibility": "shared",
+          "can_adjudicate": true,
+          "timeout_ms": 5000
+        }
+      ]
+    }
+  },
+  "expected": {
+    "findings": [
+      {
+        "id": "adjudicator.contradicted-baseline",
+        "must_flag": true
+      },
+      {
+        "id": "adjudicator.ambiguous-threshold",
+        "must_flag": true
+      },
+      {
+        "id": "adjudicator.cosmetic-note",
+        "must_flag": false
+      }
+    ],
+    "acceptable_dispositions": {
+      "adjudicator.contradicted-baseline": [
+        "accept",
+        "partial"
+      ]
+    },
+    "undecidable": [
+      "adjudicator.ambiguous-threshold"
+    ]
+  },
+  "provenance": {
+    "author": "research-steward-test-designer",
+    "created_at": "2026-08-31T12:10:00+08:00",
+    "adjudication_basis": "synthetic_expected_behavior: the ambiguous-threshold finding is designed to be undecidable by construction; no real two-annotator disagreement occurred. Recorded as undecidable to exercise the exclusion path, NOT as a human adjudication record."
+  }
+}
