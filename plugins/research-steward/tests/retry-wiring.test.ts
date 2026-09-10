@@ -3,7 +3,10 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { ResearchStewardError } from "../src/utils.js";
 
-const calls = vi.hoisted(() => ({ count: 0, mode: "quota" as "quota" | "transport" }));
+const calls = vi.hoisted(() => ({
+  count: 0,
+  mode: "quota" as "quota" | "transport" | "auth" | "model_not_found" | "cancelled" | "timeout"
+}));
 
 vi.mock("../src/providers.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/providers.js")>();
@@ -11,9 +14,9 @@ vi.mock("../src/providers.js", async (importOriginal) => {
     ...actual,
     runProvider: async (...args: unknown[]) => {
       calls.count += 1;
-      if (calls.mode === "quota") {
-        throw new ResearchStewardError("PROVIDER_EXIT_FAILED", "quota", {
-          failure_class: "quota",
+      if (calls.mode !== "transport") {
+        throw new ResearchStewardError("PROVIDER_EXIT_FAILED", calls.mode, {
+          failure_class: calls.mode,
           stderr_hash: "a".repeat(64)
         });
       }
@@ -58,6 +61,19 @@ function planFixture(retryLimit: number) {
     ]
   };
 }
+
+describe("non-retryable classes (CR-M-048)", () => {
+  for (const mode of ["auth", "model_not_found", "cancelled", "timeout"] as const) {
+    it(`does not retry ${mode}`, async () => {
+      calls.count = 0;
+      calls.mode = mode;
+      const root = await initializedProject(mode);
+      await writeFilePkt(root);
+      await runRoundtable(root, planFixture(2) as never, `no-retry-${mode}`);
+      expect(calls.count).toBe(1);
+    });
+  }
+});
 
 describe("retry policy wiring (RS-V1-SUP-018)", () => {
   it("does not retry quota failures even when retry_limit is 2", async () => {
