@@ -34,7 +34,7 @@ describe("distribution contract", () => {
       devDependencies: Record<string, string>;
       scripts: Record<string, string>;
     };
-    expect(pkg.devDependencies.vitest).toBe("3.2.7");
+    expect(pkg.devDependencies.vitest).toBe("4.1.11");
     expect(pkg.devDependencies["@vitest/coverage-v8"]).toBe(pkg.devDependencies.vitest);
     expect(pkg.scripts["test:coverage"]).toBeDefined();
   });
