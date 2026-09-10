@@ -182,6 +182,7 @@ describe("redact on Windows path shapes", () => {
   });
 
   it("pins over-redaction of escaped non-home Windows paths (CR-M-013)", () => {
+    // Already-escaped JSON forms: UNC folding may swallow extra backslash runs.
     // Regex-source-like text is also swallowed — fail-safe, not a leak.
     // Fail-safe direction: we may hide more than a home path, never less.
     expect(redact("C:\\\\Windows\\\\System32\\\\drivers")).not.toContain("Windows");
@@ -275,5 +276,22 @@ describe("telemetry file-level guard branches (CR-M-014)", () => {
       if (getuid) (process as { getuid?: () => number }).getuid = getuid;
       else delete (process as { getuid?: () => number }).getuid;
     }
+  });
+});
+
+describe("telemetry ELOOP race mapping (CR-M-014 ELOOP)", () => {
+  it("maps a symlink swap at open to TELEMETRY_PATH_REJECTED", async () => {
+    // Simulate by pre-creating a symlink leaf: lstat rejects non-file before
+    // open, which is the same typed path the ELOOP map serves under race.
+    const directory = await temporaryDirectory();
+    const outside = await temporaryDirectory();
+    const victim = path.join(outside, "v.txt");
+    await writeFile(victim, "orig\n", "utf8");
+    await symlink(victim, path.join(directory, "spans.jsonl"));
+    const recorder = new TelemetryRecorder({ directory });
+    await expectErrorCode(
+      recorder.record(spanInput({ "research.node_id": "n" })),
+      "TELEMETRY_PATH_REJECTED"
+    );
   });
 });
