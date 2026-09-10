@@ -147,10 +147,10 @@ describe("presets", () => {
     }
   });
 
-  it("lists the eight v0.1 built-in skills, matching the skills/ directory", async () => {
+  it("lists every built-in skill, matching the skills/ directory", async () => {
     const entries = await readdir(path.join(repoRoot, "skills"), { withFileTypes: true });
     const onDisk = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
-    expect(BUILT_IN_SKILL_IDS).toHaveLength(8);
+    expect(BUILT_IN_SKILL_IDS).toHaveLength(onDisk.length);
     expect([...BUILT_IN_SKILL_IDS].sort()).toEqual(onDisk);
   });
 });
