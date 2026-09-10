@@ -72895,12 +72895,35 @@ function checkRouteBilling(env) {
     summary: "No metered API keys were detected in the environment."
   };
 }
-function checkMcpToolInventory(pluginRoot) {
-  const count = EXPECTED_MCP_TOOLS.length;
+async function checkMcpToolInventory(pluginRoot) {
+  let source;
+  try {
+    source = await readFile4(path6.join(pluginRoot, "src", "server.ts"), "utf8");
+  } catch {
+    try {
+      source = await readFile4(path6.join(pluginRoot, "dist", "server.mjs"), "utf8");
+    } catch {
+      return {
+        id: "mcp.tools",
+        status: "fail",
+        summary: "Neither src/server.ts nor dist/server.mjs is readable to inventory MCP tools.",
+        remediation: "Reinstall the plugin so its server bundle is present."
+      };
+    }
+  }
+  const missing = EXPECTED_MCP_TOOLS.filter((tool) => !source.includes(`"${tool}"`));
+  if (missing.length > 0) {
+    return {
+      id: "mcp.tools",
+      status: "fail",
+      summary: `Server source is missing ${missing.length} expected MCP tool name(s) (names withheld).`,
+      remediation: "Update EXPECTED_MCP_TOOLS or restore the missing tool registrations."
+    };
+  }
   return {
     id: "mcp.tools",
     status: "pass",
-    summary: `Expected MCP tool inventory lists ${count} tools.`
+    summary: `All ${EXPECTED_MCP_TOOLS.length} expected MCP tool names appear in the server source.`
   };
 }
 function checkRootPolicy(env) {
@@ -72982,7 +73005,7 @@ async function runDoctor(options = {}) {
     checks.push(providerAuthCheck(provider));
   }
   checks.push(checkHttpToken(env), checkRouteBilling(env));
-  checks.push(checkMcpToolInventory(pluginRoot), checkRootPolicy(env), checkModelRoute(env));
+  checks.push(await checkMcpToolInventory(pluginRoot), checkRootPolicy(env), checkModelRoute(env));
   return DoctorReportSchema.parse({
     protocol_version: PROTOCOL_VERSION,
     checked_at: (/* @__PURE__ */ new Date()).toISOString(),

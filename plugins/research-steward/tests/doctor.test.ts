@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { DoctorReportSchema, runDoctor, type DoctorReport } from "../src/doctor.js";
+import { DoctorReportSchema, runDoctor, EXPECTED_MCP_TOOLS, type DoctorReport } from "../src/doctor.js";
 
 const disposableRoots = new Set<string>();
 const restoreWritable = new Set<string>();
@@ -51,6 +51,12 @@ async function pluginFixture(): Promise<string> {
   await writeFile(
     path.join(root, ".mcp.json"),
     JSON.stringify({ mcpServers: { "research-steward": { command: "node" } } })
+  );
+  await mkdir(path.join(root, "src"), { recursive: true });
+  await writeFile(
+    path.join(root, "src", "server.ts"),
+    EXPECTED_MCP_TOOLS.map((tool) => `registerTool("${tool}");`).join("\n"),
+    "utf8"
   );
   return root;
 }
@@ -168,7 +174,7 @@ describe("doctor report", () => {
       execProbe: allFound
     });
     expect(check(report, "mcp.tools").status).toBe("pass");
-    expect(check(report, "mcp.tools").summary).toContain("16 tools");
+    expect(check(report, "mcp.tools").summary).toContain("16");
     expect(check(report, "roots.policy").status).toBe("pass");
     expect(check(report, "route.model").status).toBe("skipped");
   });

@@ -299,3 +299,47 @@ describe("index cache edge cases", () => {
     await expectErrorCode(readEventsWithIndex(rootB), "STALE_LEDGER_INDEX");
   });
 });
+
+describe("checkpoint file_name identity (CR-M-039)", () => {
+  it("writes file_name on new checkpoints", async () => {
+    const projectRoot = await projectWithEvents(3);
+    const index = await buildLedgerIndex(projectRoot, 1);
+    expect(index.checkpoints.length).toBeGreaterThan(0);
+    for (const checkpoint of index.checkpoints) {
+      expect(checkpoint.file_name).toMatch(/^\d{8}-[0-9a-f-]{36}\.json$/);
+    }
+    await writeLedgerIndex(projectRoot, index);
+    expect(await readEventsWithIndex(projectRoot)).toHaveLength(3);
+  });
+
+  it("still accepts a v1 index without file_name", async () => {
+    const projectRoot = await projectWithEvents(2);
+    const index = await buildLedgerIndex(projectRoot, 1);
+    const legacy = {
+      ...index,
+      checkpoints: index.checkpoints.map(({ file_name, ...rest }) => rest)
+    };
+    await writeLedgerIndex(projectRoot, legacy as never);
+    expect(await readEventsWithIndex(projectRoot)).toHaveLength(2);
+  });
+
+  it("fails closed when file_name is tampered", async () => {
+    const projectRoot = await projectWithEvents(2);
+    const index = await buildLedgerIndex(projectRoot, 1);
+    const tampered = {
+      ...index,
+      checkpoints: index.checkpoints.map((checkpoint, i) =>
+        i === 0
+          ? {
+              ...checkpoint,
+              file_name: `00000001-${"0".repeat(8)}-${"0".repeat(4)}-${"0".repeat(4)}-${"0".repeat(4)}-${"0".repeat(12)}.json`
+            }
+          : checkpoint
+      )
+    };
+    await writeLedgerIndex(projectRoot, tampered);
+    await expect(readEventsWithIndex(projectRoot)).rejects.toMatchObject({
+      code: "STALE_LEDGER_INDEX"
+    });
+  });
+});

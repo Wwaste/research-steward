@@ -169,7 +169,8 @@ describe("planMaintenance", () => {
           {
             relative_path: ".research/.event-lock.retired-".concat("b".repeat(32)),
             generation: "b".repeat(32),
-            owner_sha256: null
+            owner_sha256: null,
+            owner_state: "missing" as const
           }
         ]
       },
@@ -247,13 +248,13 @@ describe("applyMaintenance", () => {
     const inspection = await inspectMaintenance(root);
     expect(inspection.tombstones.count).toBe(baseline + 6);
     const plan = await planMaintenance(root, inspection);
-    const result = await applyMaintenance(root, plan, { offline_confirmed: true, plan_hash: plan.plan_hash });
-
-    const deleteResult = result.actions.find((action) => action.kind === "delete_tombstones");
-    expect(deleteResult).toMatchObject({ completed: baseline + 5, skipped: 1 });
-    expect((await inspectMaintenance(root)).tombstones.count).toBe(1);
+    // CR-M-021: unexpected contents fail the whole apply — nothing is deleted.
+    await expectErrorCode(
+      applyMaintenance(root, plan, { offline_confirmed: true, plan_hash: plan.plan_hash }),
+      "MAINTENANCE_PLAN_STALE"
+    );
     for (const tombstone of tombstones) {
-      expect(await pathExists(tombstone)).toBe(false);
+      expect(await pathExists(tombstone)).toBe(true);
     }
     expect(await pathExists(suspicious)).toBe(true);
     for (const decoy of decoys) {
@@ -350,17 +351,16 @@ describe("rehearseRestore", () => {
 });
 
 describe("applyMaintenance hardening", () => {
-  it("skips a tombstone whose owner.json is not a regular file", async () => {
+  it("fails closed when a tombstone owner.json is not a regular file (CR-M-021)", async () => {
     const root = await initializedProject("Odd tombstone");
     const odd = path.join(root, ".research", `.event-lock.retired-${generation("odd")}`);
-    // owner.json exists, but as a directory: the second confirmation must
-    // refuse to treat this as a retired lease.
     await mkdir(path.join(odd, "owner.json"), { recursive: true });
 
     const plan = await planMaintenance(root, await inspectMaintenance(root));
-    const result = await applyMaintenance(root, plan, { offline_confirmed: true, plan_hash: plan.plan_hash });
-    const deleteResult = result.actions.find((action) => action.kind === "delete_tombstones");
-    expect(deleteResult?.skipped).toBe(1);
+    await expectErrorCode(
+      applyMaintenance(root, plan, { offline_confirmed: true, plan_hash: plan.plan_hash }),
+      "MAINTENANCE_PLAN_STALE"
+    );
     expect(await pathExists(odd)).toBe(true);
   });
 

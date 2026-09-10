@@ -150,6 +150,7 @@ describe("presets", () => {
   it("lists every built-in skill, matching the skills/ directory", async () => {
     const entries = await readdir(path.join(repoRoot, "skills"), { withFileTypes: true });
     const onDisk = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+    expect(BUILT_IN_SKILL_IDS.length).toBeGreaterThanOrEqual(8);
     expect(BUILT_IN_SKILL_IDS).toHaveLength(onDisk.length);
     expect([...BUILT_IN_SKILL_IDS].sort()).toEqual(onDisk);
   });
@@ -351,6 +352,17 @@ describe("workflow lock", () => {
     const { lock: second } = build("code-science-audit");
     await expect(writeLock(target, second)).rejects.toMatchObject({ code: "EEXIST" });
     expect(JSON.parse(await readFile(target, "utf8"))).toEqual(onDisk);
+  });
+
+  it("changes limits fingerprint when overrides change limits (CR-M-044)", () => {
+    const a = build("quick-review");
+    const b = buildPlan({
+      preset_id: "quick-review",
+      packet_id: "packet-tdd-001",
+      overrides: { limits: { retry_limit: 2 } }
+    });
+    expect(a.lock.limits_fingerprint).not.toBe(b.lock.limits_fingerprint);
+    expect(a.lock.skill_fingerprints.every((e) => typeof e.id === "string")).toBe(true);
   });
 
   it("freezes limits fingerprint and skill identity slots (RS-V1-SUP-007)", () => {

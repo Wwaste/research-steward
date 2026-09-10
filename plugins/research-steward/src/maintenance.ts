@@ -24,7 +24,10 @@ export type IndexEntryKind = "missing" | "file" | "directory" | "symlink" | "oth
 export interface TombstoneTarget {
   relative_path: string;
   generation: string;
+  /** sha256 of owner.json, or null when owner_state is not "file". */
   owner_sha256: string | null;
+  /** CR-M-024: distinguish missing / unreadable / not_file / file. */
+  owner_state: "file" | "missing" | "unreadable" | "not_file";
 }
 
 export interface MaintenanceInspection {
@@ -118,19 +121,23 @@ async function tombstoneIdentity(
   const generationMatch = GENERATION_FROM_NAME.exec(name);
   if (!generationMatch) return null;
   let ownerSha: string | null = null;
+  let ownerState: TombstoneTarget["owner_state"] = "missing";
   try {
     const ownerBytes = await readFile(path.join(absolute, "owner.json"));
     ownerSha = sha256Text(ownerBytes.toString("utf8"));
+    ownerState = "file";
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    // Missing owner is representable; a non-file owner.json still keeps the
-    // tombstone in the exact-target set so apply can refuse or skip it.
-    if (code !== "ENOENT" && code !== "EISDIR" && code !== "EACCES") return null;
+    if (code === "ENOENT") ownerState = "missing";
+    else if (code === "EISDIR") ownerState = "not_file";
+    else if (code === "EACCES") ownerState = "unreadable";
+    else return null;
   }
   return {
     relative_path: relativePath,
     generation: generationMatch[1]!,
-    owner_sha256: ownerSha
+    owner_sha256: ownerSha,
+    owner_state: ownerState
   };
 }
 
@@ -309,10 +316,11 @@ export async function inspectMaintenance(root: string): Promise<MaintenanceInspe
     tombstones: {
       count: tombstones.length,
       oldest_age_ms: oldestAgeMs,
-      targets: tombstones.map(({ relative_path, generation, owner_sha256 }) => ({
+      targets: tombstones.map(({ relative_path, generation, owner_sha256, owner_state }) => ({
         relative_path,
         generation,
-        owner_sha256
+        owner_sha256,
+        owner_state
       }))
     },
     ledger: { events: eventFileCount, head_consistent: headConsistent },
@@ -434,27 +442,37 @@ async function deleteTombstones(
   for (const record of records) {
     const segments = record.relative_path.split("/");
     const name = segments.at(-1) ?? "";
-    // Second confirmation before any deletion: the name must match the strict
-    // tombstone grammar again, the path must never enter events, frozen, or
-    // packages, and the directory may hold nothing but the lease owner file.
+    // Second confirmation: grammar, protected segments, empty-or-owner-only
+    // contents, and owner identity still match the frozen plan (CR-M-021).
+    // Any drift fails the whole apply — we do not silently skip and continue.
     if (!PROTOCOL_TOMBSTONE_NAME.test(name) && !RUN_LEASE_TOMBSTONE_NAME.test(name)) {
-      skipped += 1;
-      continue;
+      throw new ResearchStewardError(
+        "MAINTENANCE_PLAN_STALE",
+        `Tombstone path no longer matches the strict grammar: ${record.relative_path}`
+      );
     }
     if (segments.some((segment) => ["events", "frozen", "packages"].includes(segment))) {
-      skipped += 1;
-      continue;
+      throw new ResearchStewardError(
+        "MAINTENANCE_PLAN_STALE",
+        `Tombstone path entered a protected directory: ${record.relative_path}`
+      );
     }
     let absolute: string;
     try {
       absolute = await resolvePrivateExistingInside(root, record.relative_path);
-    } catch {
-      skipped += 1;
-      continue;
+    } catch (error) {
+      throw new ResearchStewardError(
+        "MAINTENANCE_PLAN_STALE",
+        `Tombstone disappeared or is unreachable: ${record.relative_path}`,
+        { reason: errorMessage(error) }
+      );
     }
-    if (!(await lstat(absolute)).isDirectory()) {
-      skipped += 1;
-      continue;
+    const info = await lstat(absolute);
+    if (!info.isDirectory()) {
+      throw new ResearchStewardError(
+        "MAINTENANCE_PLAN_STALE",
+        `Tombstone is no longer a directory: ${record.relative_path}`
+      );
     }
     const contents = await readdir(absolute, { withFileTypes: true });
     const confirmed =
@@ -463,8 +481,23 @@ async function deleteTombstones(
         contents[0]!.name === "owner.json" &&
         contents[0]!.isFile());
     if (!confirmed) {
-      skipped += 1;
-      continue;
+      throw new ResearchStewardError(
+        "MAINTENANCE_PLAN_STALE",
+        `Tombstone contents are not empty-or-owner-only: ${record.relative_path}`
+      );
+    }
+    // Re-read owner identity immediately before rm.
+    const identity = await tombstoneIdentity(absolute, record.relative_path);
+    if (
+      identity === null ||
+      identity.generation !== record.generation ||
+      identity.owner_sha256 !== record.owner_sha256 ||
+      identity.owner_state !== record.owner_state
+    ) {
+      throw new ResearchStewardError(
+        "MAINTENANCE_PLAN_STALE",
+        `Tombstone owner identity changed since the plan: ${record.relative_path}`
+      );
     }
     await rm(absolute, { recursive: true, force: true });
     deleted += 1;
@@ -486,6 +519,7 @@ function identitiesMatch(
     if (!found) return false;
     if (found.generation !== target.generation) return false;
     if (found.owner_sha256 !== target.owner_sha256) return false;
+    if (found.owner_state !== target.owner_state) return false;
   }
   return true;
 }
@@ -550,10 +584,11 @@ export async function applyMaintenance(
     switch (action.kind) {
       case "delete_tombstones": {
         const records = await scanTombstones(root);
-        const current = records.map(({ relative_path, generation, owner_sha256 }) => ({
+        const current = records.map(({ relative_path, generation, owner_sha256, owner_state }) => ({
           relative_path,
           generation,
-          owner_sha256
+          owner_sha256,
+          owner_state
         }));
         if (records.length !== action.targets || !identitiesMatch(action.target_identities, current)) {
           throw new ResearchStewardError(
