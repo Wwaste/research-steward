@@ -3,7 +3,7 @@ import { isMap, isScalar, parseDocument, type Document, type YAMLMap, isSeq } fr
 import { resolveExistingInside } from "./paths.js";
 import { readEvents, unresolvedBlockedEvents } from "./store.js";
 import type { CommittedEvent } from "./protocol.js";
-import { ResearchStewardError, atomicWriteFile } from "./utils.js";
+import { ResearchStewardError, atomicWriteFile, sha256Text } from "./utils.js";
 
 export interface PrepareAcceptanceOptions {
   approvalId?: string;
@@ -131,7 +131,9 @@ export async function prepareAcceptance(
   options: PrepareAcceptanceOptions = {}
 ): Promise<PrepareAcceptanceResult> {
   const acceptancePath = await resolveExistingInside(root, "ACCEPTANCE.yaml");
-  const doc = parseDocument(await readFile(acceptancePath, "utf8"));
+  const originalText = await readFile(acceptancePath, "utf8");
+  const originalHash = sha256Text(originalText);
+  const doc = parseDocument(originalText);
   if (doc.errors.length > 0) {
     throw invalidDocument(doc.errors[0]!.message);
   }
@@ -190,6 +192,15 @@ export async function prepareAcceptance(
   }
   writeAcceptsValue(doc, approval, "verification_event_id", verification.event_id);
   writeAcceptsValue(doc, approval, "verification_event_hash", verification.event_hash);
+  // Compare-and-swap against the bytes this run parsed: a human editing status,
+  // authority or note while the ledger checks ran must never be overwritten.
+  if (sha256Text(await readFile(acceptancePath, "utf8")) !== originalHash) {
+    throw new ResearchStewardError(
+      "ACCEPTANCE_DOCUMENT_CHANGED",
+      "ACCEPTANCE.yaml changed while acceptance was being prepared; nothing was written. Re-read the document and prepare again.",
+      { expected_sha256: originalHash }
+    );
+  }
   await atomicWriteFile(acceptancePath, doc.toString());
   return { ...result, changed: true };
 }
