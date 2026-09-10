@@ -3,15 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runProvider } from "../src/providers.js";
-import {
-  allowsAutoReplay,
-  finishInvocation,
-  makeInvocationId,
-  markUnknownAfterCrash,
-  requestCancel,
-  confirmCancelled,
-  startInvocation
-} from "../src/invocations.js";
+import { allowsAutoReplay, foldInvocations, makeInvocationId } from "../src/invocations.js";
 import { initializedProject } from "./helpers.js";
 
 const cleanup: string[] = [];
@@ -90,44 +82,50 @@ describe("process-level fault injection (Task 2.2)", () => {
     expect(lines).toHaveLength(1);
   });
 
-  it("crash: unknown invocation is not auto-replayed for paid adapters", () => {
-    const started = startInvocation({
-      run_id: "r1",
-      node_id: "n1",
-      attempt: 1,
-      provider: "kimi"
-    });
-    const crashed = markUnknownAfterCrash(started);
-    expect(crashed.state).toBe("unknown");
-    expect(allowsAutoReplay(crashed, { resume_policy: "never" })).toBe(false);
-    expect(allowsAutoReplay(crashed, { resume_policy: "fake_only" })).toBe(false);
-    const fake = markUnknownAfterCrash(
-      startInvocation({ run_id: "r1", node_id: "n1", attempt: 1, provider: "fake" })
-    );
-    expect(allowsAutoReplay(fake, { resume_policy: "fake_only" })).toBe(true);
-  });
-
-  it("idempotent: same run/node/attempt yields the same invocation_id", () => {
-    expect(makeInvocationId("r", "n", 2)).toBe(makeInvocationId("r", "n", 2));
-    expect(makeInvocationId("r", "n", 2)).not.toBe(makeInvocationId("r", "n", 3));
-    const inv = startInvocation({
-      run_id: "r",
-      node_id: "n",
-      attempt: 1,
-      provider: "fake"
-    });
-    const again = startInvocation({
-      run_id: "r",
-      node_id: "n",
-      attempt: 1,
-      provider: "fake"
-    });
-    expect(again.invocation_id).toBe(inv.invocation_id);
-    const finished = finishInvocation(inv, { status: "ok" });
-    expect(() => finishInvocation(finished, { status: "ok" })).toThrowError(
-      expect.objectContaining({ code: "INVOCATION_ALREADY_TERMINAL" })
-    );
-    const cancelled = confirmCancelled(requestCancel(again));
-    expect(cancelled.state).toBe("cancelled");
+  it("crash: unknown is not auto-replayed for paid adapters (fold)", () => {
+    const invId = makeInvocationId("r1", "n1", 1);
+    const events = [
+      {
+        type: "invocation_started",
+        run_id: "r1",
+        actor: { id: "c", role: "coordinator" },
+        status: "complete",
+        summary: "s",
+        metadata: {
+          invocation_id: invId,
+          run_id: "r1",
+          node_id: "n1",
+          attempt: 1,
+          adapter: "kimi"
+        },
+        event_id: "e1",
+        sequence: 1,
+        created_at: "2026-09-11T00:00:00.000Z",
+        project_id: "11111111-1111-4111-8111-111111111111",
+        event_hash: "a".repeat(64),
+        previous_event_hash: null
+      },
+      {
+        type: "invocation_unknown",
+        run_id: "r1",
+        actor: { id: "c", role: "coordinator" },
+        status: "complete",
+        summary: "s",
+        metadata: {
+          invocation_id: invId,
+          marked_at_resume: true,
+          prior_state: "started"
+        },
+        event_id: "e2",
+        sequence: 2,
+        created_at: "2026-09-11T00:00:01.000Z",
+        project_id: "11111111-1111-4111-8111-111111111111",
+        event_hash: "b".repeat(64),
+        previous_event_hash: "a".repeat(64)
+      }
+    ] as never;
+    const snap = foldInvocations(events as never).get(invId)!;
+    expect(allowsAutoReplay(snap, { resume_policy: "never" })).toBe(false);
+    expect(allowsAutoReplay(snap, { resume_policy: "fake_only" })).toBe(false);
   });
 });

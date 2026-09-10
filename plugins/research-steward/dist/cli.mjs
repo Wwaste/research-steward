@@ -60512,38 +60512,39 @@ function decideRetry(failure, attempt, policy) {
 
 // src/invocations.ts
 import { createHash as createHash2 } from "node:crypto";
-var INVOCATION_STATES = [
+var INVOCATION_FOLD_STATES = [
   "started",
-  "finished",
-  "unknown",
   "cancel_requested",
-  "cancelled"
+  "finished_ok",
+  "finished_failed",
+  "cancelled",
+  "unknown"
 ];
-var InvocationRecordSchema = external_exports.object({
-  invocation_version: external_exports.literal(1),
-  invocation_id: external_exports.string().min(1).max(100),
-  run_id: external_exports.string().min(1).max(100),
-  node_id: external_exports.string().min(1).max(100),
+var InvocationSnapshotSchema = external_exports.object({
+  invocation_id: external_exports.string().regex(/^[a-f0-9]{32}$/),
+  run_id: IdentifierSchema,
+  node_id: IdentifierSchema,
   attempt: external_exports.number().int().min(1),
-  state: external_exports.enum(INVOCATION_STATES),
-  provider: external_exports.string().min(1).max(64),
-  started_at: external_exports.string().datetime({ offset: true }),
-  finished_at: external_exports.string().datetime({ offset: true }).nullable().default(null),
-  failure_class: external_exports.enum([
-    "quota",
-    "auth",
-    "model_not_found",
-    "timeout",
-    "transport",
-    "invalid_output",
-    "cancelled",
-    "unknown"
-  ]).nullable().default(null),
-  /** Never raw provider output — hash only. */
-  stdout_sha256: external_exports.string().regex(/^[a-f0-9]{64}$/).nullable().default(null)
+  adapter: external_exports.string().min(1).max(64),
+  model: external_exports.string().min(1).max(100).optional(),
+  state: external_exports.enum(INVOCATION_FOLD_STATES),
+  failure_class: FailureClassSchema.nullable().default(null),
+  stdout_sha256: external_exports.string().regex(/^[a-f0-9]{64}$/).nullable().default(null),
+  replay_authorized: external_exports.boolean().default(false),
+  prior_state: external_exports.enum(["started", "cancel_requested"]).nullable().default(null)
 }).strict();
 function makeInvocationId(run_id, node_id, attempt) {
-  return createHash2("sha256").update(`${run_id}|${node_id}|${attempt}`, "utf8").digest("hex").slice(0, 32);
+  IdentifierSchema.parse(run_id);
+  IdentifierSchema.parse(node_id);
+  if (!Number.isInteger(attempt) || attempt < 1) {
+    throw new ResearchStewardError(
+      "INVALID_INVOCATION_ATTEMPT",
+      "attempt must be a 1-based integer"
+    );
+  }
+  return createHash2("sha256").update(`${run_id}
+${node_id}
+${attempt}`, "utf8").digest("hex").slice(0, 32);
 }
 
 // src/workflow.ts
