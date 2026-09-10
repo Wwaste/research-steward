@@ -17,6 +17,8 @@ import {
   readEvents
 } from "./store.js";
 import { modelOutputContract, runProvider } from "./providers.js";
+import { decideRetry, policyFromPlanLimits } from "./retry-policy.js";
+import type { FailureClass } from "./provider-failure.js";
 import {
   ensurePrivateDirectoryInside,
   resolvePrivateDestinationInside
@@ -517,6 +519,17 @@ async function runOneNode(
       result = await runProvider(effectiveNode, prompt, root, plan.limits.max_output_chars);
     } catch (error) {
       lastError = error;
+      // Typed retry policy (RS-V1-SUP-018).
+      const failureClass =
+        error instanceof ResearchStewardError &&
+        typeof error.details["failure_class"] === "string"
+          ? (error.details["failure_class"] as FailureClass)
+          : "unknown";
+      const policy = policyFromPlanLimits(plan.limits.retry_limit as 0 | 1 | 2);
+      const decision = decideRetry(failureClass, attempts, policy);
+      if (!decision.retry) {
+        break;
+      }
       continue;
     }
 

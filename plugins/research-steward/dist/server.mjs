@@ -71408,6 +71408,97 @@ import os from "node:os";
 import path5 from "node:path";
 import { access as access2, mkdir as mkdir4, mkdtemp, realpath as realpath2, rm as rm4 } from "node:fs/promises";
 import { constants as constants2 } from "node:fs";
+
+// src/provider-failure.ts
+var FailureClassSchema = external_exports.enum([
+  "quota",
+  "auth",
+  "model_not_found",
+  "timeout",
+  "transport",
+  "invalid_output",
+  "cancelled",
+  "unknown"
+]);
+var QUOTA_STDERR_PATTERNS = [
+  // "Disk quota exceeded" is a filesystem error, not an API budget problem,
+  // so a quota directly preceded by "disk" does not count.
+  /(?<!disk\s)\bquotas?\b/i,
+  /rate.?limit/i,
+  /too many requests/i,
+  // A bare "429" is too ambiguous ("took 429 ms"), so the status number only
+  // counts when the same excerpt also carries an HTTP-ish context word.
+  /(?=[\s\S]*\b429\b)(?=[\s\S]*\b(?:error|status|http|too many)\b)/i,
+  /额度/,
+  /配额/,
+  /限流/
+];
+var AUTH_STDERR_PATTERNS = [
+  /unauthori[sz]ed/i,
+  /\b401\b/,
+  /token.*expired/i,
+  /auth(entication|orization)?\s*(fail|error|expired|required)/i,
+  // Word boundaries keep login/log in/log-in matching while excluding
+  // logging, syslog, catalog, backlog, and dialog.
+  /\blog.?in\b/i,
+  /登录/,
+  /认证失败/,
+  /凭证/
+];
+var MODEL_NOT_FOUND_STDERR_PATTERNS = [
+  /(unknown|invalid|unsupported)\s+model/i,
+  // "model ... not found" only counts when the excerpt is about the model
+  // itself; the lookahead rejects file diagnostics such as
+  // "model output file not found".
+  /model\b(?![\s\S]*\boutput\b)[\s\S]*\bnot\b[\s\S]*\b(found|available|supported)\b/i,
+  /no such model/i,
+  /模型.*不存在/,
+  /模型.*未找到/,
+  /不存在.*模型/
+];
+var PATTERN_SETS = [
+  ["quota", QUOTA_STDERR_PATTERNS],
+  ["auth", AUTH_STDERR_PATTERNS],
+  ["model_not_found", MODEL_NOT_FOUND_STDERR_PATTERNS]
+];
+var STRUCTURED_CODE_CLASSES = /* @__PURE__ */ new Map([
+  ["PROVIDER_TIMEOUT", "timeout"],
+  ["PROVIDER_QUEUE_TIMEOUT", "timeout"],
+  ["MODEL_OUTPUT_REJECTED", "invalid_output"],
+  ["PROVIDER_OUTPUT_LIMIT", "invalid_output"],
+  ["PROVIDER_SPAWN_FAILED", "transport"],
+  ["PROVIDER_CANCELLED", "cancelled"],
+  ["CANCELLED", "cancelled"]
+]);
+function classifyProviderFailureDetailed(input2) {
+  const structured = input2.code ? STRUCTURED_CODE_CLASSES.get(input2.code) : void 0;
+  if (structured) {
+    return { failure_class: structured, classified_by: "structured" };
+  }
+  if (input2.code === "PROVIDER_EXIT_FAILED") {
+    const excerpts = input2.signals?.stderr_patterns ?? [];
+    for (const [failureClass, patterns] of PATTERN_SETS) {
+      for (const excerpt of excerpts) {
+        if (patterns.some((pattern) => pattern.test(excerpt))) {
+          return { failure_class: failureClass, classified_by: "pattern" };
+        }
+      }
+    }
+  }
+  return { failure_class: "unknown", classified_by: "default" };
+}
+var SHA256_HEX = /^[a-f0-9]{64}$/;
+var FailureEvidenceSchema = external_exports.object({
+  failure_class: FailureClassSchema,
+  provider_code: external_exports.string().min(1).max(100).optional(),
+  exit_code: external_exports.number().int().optional(),
+  stdout_hash: external_exports.string().regex(SHA256_HEX).optional(),
+  stderr_hash: external_exports.string().regex(SHA256_HEX).optional(),
+  attempt: external_exports.number().int().min(1),
+  classified_by: external_exports.enum(["structured", "pattern", "default"])
+}).strict();
+
+// src/providers.ts
 var MAX_ARG_PROMPT_BYTES = 96e3;
 var activeProviderProcesses = 0;
 var providerWaiters = [];
@@ -71924,6 +72015,14 @@ async function runProvider(node2, prompt, _projectRoot, maximumOutput) {
     await rm4(sealedRoot, { recursive: true, force: true }).catch(() => void 0);
   }
   if (result.exitCode !== 0) {
+    const stderrExcerpt = result.stderr.slice(-2e3);
+    const classification = classifyProviderFailureDetailed({
+      code: "PROVIDER_EXIT_FAILED",
+      adapter: node2.adapter,
+      exit_code: result.exitCode,
+      stderr_excerpt_hash: sha256Text(result.stderr),
+      signals: { stderr_patterns: [stderrExcerpt] }
+    });
     throw new ResearchStewardError(
       "PROVIDER_EXIT_FAILED",
       `${defaults.commandName} exited with ${result.exitCode}.`,
@@ -71933,7 +72032,9 @@ async function runProvider(node2, prompt, _projectRoot, maximumOutput) {
         stdout_hash: sha256Text(result.stdout),
         stdout_chars: result.stdout.length,
         stderr_hash: sha256Text(result.stderr),
-        stderr_chars: result.stderr.length
+        stderr_chars: result.stderr.length,
+        failure_class: classification.failure_class,
+        classified_by: classification.classified_by
       }
     );
   }
@@ -71967,6 +72068,77 @@ async function runProvider(node2, prompt, _projectRoot, maximumOutput) {
     stderr_chars: result.stderr.length,
     executable_name: path5.basename(executable)
   };
+}
+
+// src/retry-policy.ts
+var RetryPolicySchema = external_exports.object({
+  max_transport_retries: external_exports.number().int().min(0).max(2).default(1),
+  allow_invalid_output_repair: external_exports.boolean().default(false),
+  backoff_ms: external_exports.array(external_exports.number().int().min(0).max(6e5)).min(1).max(8).default([500])
+}).strict();
+function policyFromPlanLimits(retry_limit, options = {}) {
+  if (![0, 1, 2].includes(retry_limit)) {
+    throw new ResearchStewardError(
+      "INVALID_RETRY_LIMIT",
+      `policyFromPlanLimits requires a retry_limit of 0, 1, or 2; received ${retry_limit}.`
+    );
+  }
+  return RetryPolicySchema.parse({
+    max_transport_retries: retry_limit,
+    allow_invalid_output_repair: options.allowRepair === true && retry_limit >= 1,
+    backoff_ms: [500]
+  });
+}
+function decideRetry(failure, attempt, policy) {
+  if (!Number.isInteger(attempt) || attempt < 1) {
+    throw new ResearchStewardError(
+      "INVALID_RETRY_ATTEMPT",
+      `Retry decisions require a 1-based integer attempt number; received ${attempt}.`
+    );
+  }
+  switch (failure) {
+    case "quota":
+    case "auth":
+    case "model_not_found":
+    case "cancelled":
+    case "timeout":
+      return {
+        retry: false,
+        reason: `The failure class "${failure}" is not retryable: repeating the call cannot fix the underlying condition and would only spend more budget.`
+      };
+    case "transport": {
+      if (attempt <= policy.max_transport_retries) {
+        const index = Math.min(attempt - 1, policy.backoff_ms.length - 1);
+        return {
+          retry: true,
+          reason: `Transport failure on attempt ${attempt} is within the policy limit of ${policy.max_transport_retries} transport retries.`,
+          backoff_ms: policy.backoff_ms[index]
+        };
+      }
+      return {
+        retry: false,
+        reason: `Transport failure on attempt ${attempt} exhausted the policy limit of ${policy.max_transport_retries} transport retries.`
+      };
+    }
+    case "invalid_output": {
+      if (policy.allow_invalid_output_repair && attempt === 1) {
+        return {
+          retry: true,
+          reason: "Invalid output on the first attempt qualifies for the single repair attempt this policy explicitly enables.",
+          repair_attempt: true
+        };
+      }
+      return {
+        retry: false,
+        reason: policy.allow_invalid_output_repair ? `Invalid output on attempt ${attempt} is past the single allowed repair attempt.` : "Invalid output is not retried because this policy does not enable repair attempts."
+      };
+    }
+    case "unknown":
+      return {
+        retry: false,
+        reason: 'The failure class "unknown" is not retryable: without a classified cause there is no basis for paying for another call.'
+      };
+  }
 }
 
 // src/workflow.ts
@@ -72357,6 +72529,12 @@ async function runOneNode(root, plan, runId, node2, packetBundle, packetHash, co
       result = await runProvider(effectiveNode, prompt, root, plan.limits.max_output_chars);
     } catch (error61) {
       lastError = error61;
+      const failureClass = error61 instanceof ResearchStewardError && typeof error61.details["failure_class"] === "string" ? error61.details["failure_class"] : "unknown";
+      const policy = policyFromPlanLimits(plan.limits.retry_limit);
+      const decision = decideRetry(failureClass, attempts, policy);
+      if (!decision.retry) {
+        break;
+      }
       continue;
     }
     let decisions;

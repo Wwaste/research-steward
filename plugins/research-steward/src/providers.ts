@@ -4,6 +4,7 @@ import path from "node:path";
 import { access, mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { constants } from "node:fs";
 import { ModelOutputSchema, type ModelOutput, type RoundtableNode } from "./protocol.js";
+import { classifyProviderFailureDetailed } from "./provider-failure.js";
 import { ResearchStewardError, bounded, sha256Text, writeImmutableFile } from "./utils.js";
 
 const MAX_ARG_PROMPT_BYTES = 96_000;
@@ -608,6 +609,17 @@ export async function runProvider(
     await rm(sealedRoot, { recursive: true, force: true }).catch(() => undefined);
   }
   if (result.exitCode !== 0) {
+    // Classify while stderr is still in memory (RS-V1-SUP-018). Raw text is
+    // never attached — only the class and hashes.
+    // Sanitized excerpt only — never persist raw stderr.
+    const stderrExcerpt = result.stderr.slice(-2_000);
+    const classification = classifyProviderFailureDetailed({
+      code: "PROVIDER_EXIT_FAILED",
+      adapter: node.adapter,
+      exit_code: result.exitCode,
+      stderr_excerpt_hash: sha256Text(result.stderr),
+      signals: { stderr_patterns: [stderrExcerpt] }
+    });
     throw new ResearchStewardError(
       "PROVIDER_EXIT_FAILED",
       `${defaults.commandName} exited with ${result.exitCode}.`,
@@ -617,7 +629,9 @@ export async function runProvider(
         stdout_hash: sha256Text(result.stdout),
         stdout_chars: result.stdout.length,
         stderr_hash: sha256Text(result.stderr),
-        stderr_chars: result.stderr.length
+        stderr_chars: result.stderr.length,
+        failure_class: classification.failure_class,
+        classified_by: classification.classified_by
       }
     );
   }
