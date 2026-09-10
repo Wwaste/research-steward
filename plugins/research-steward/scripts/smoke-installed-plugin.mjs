@@ -127,9 +127,9 @@ async function driveReplicaServer(replicaRoot, projectRoot) {
     });
     if (status.isError) fail("research_get_status failed against the replica");
     const tools = await client.listTools();
-    if (tools.tools.length !== EXPECTED_TOOL_COUNT) {
+    if (tools.tools.length !== CURRENT_TOOL_COUNT) {
       fail(
-        `expected exactly ${EXPECTED_TOOL_COUNT} tools, found ${tools.tools.length}`
+        `expected exactly ${CURRENT_TOOL_COUNT} tools, found ${tools.tools.length}`
       );
     }
     return { tools: tools.tools.length, init: "pass", status: "pass" };
