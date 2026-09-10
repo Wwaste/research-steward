@@ -20,7 +20,7 @@ import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(pluginRoot, "..", "..");
-const EXPECTED_SKILL_COUNT = 16;
+const EXPECTED_SKILL_COUNT = 17;
 const EXPECTED_TOOL_COUNT = 16;
 const SCHEMA_FILES = [
   "project-manifest.schema.json",
