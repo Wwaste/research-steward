@@ -556,3 +556,18 @@ describe("model-route from plan (CR-M-038)", () => {
     expect(checkModelRouteFromPlan(undefined).status).toBe("skipped");
   });
 });
+
+describe("runDoctor plan/lock cross-check (CR-M-038)", () => {
+  it("adds a route.model check when a plan with mismatch is supplied", async () => {
+    const report = await runDoctor({
+      nodeVersion: "v22.4.0",
+      pluginRoot: await pluginFixture(),
+      env: { RESEARCH_STEWARD_ROOTS: await temporaryDirectory() },
+      execProbe: allFound,
+      plan: { nodes: [{ adapter: "kimi", model: "grok-beta" }] }
+    });
+    const checks = report.checks.filter((c) => c.id === "route.model");
+    expect(checks.length).toBeGreaterThanOrEqual(1);
+    expect(checks.some((c) => c.status === "fail")).toBe(true);
+  });
+});

@@ -295,3 +295,22 @@ describe("telemetry ELOOP race mapping (CR-M-014 ELOOP)", () => {
     );
   });
 });
+
+describe("escaped folding pin (CR-M-013)", () => {
+  it("over-redacts JSON-escaped Windows paths and leaves single-backslash non-home alone", () => {
+    // JSON-escaped form: every backslash doubled in the log line.
+    const escapedWindows = "C:\\\\Windows\\\\System32\\\\drivers";
+    expect(redact(escapedWindows)).toContain("<redacted>");
+    expect(redact(escapedWindows)).not.toContain("Windows");
+    // Single-backslash non-home path is preserved.
+    expect(redact("C:\\Program Files\\provider-cli\\bin")).toBe(
+      "C:\\Program Files\\provider-cli\\bin"
+    );
+  });
+
+  it("documents that escaped C:\\\\Users\\\\Alice is caught (UNC host fold, not drive pattern)", () => {
+    const escapedHome = "C:\\\\Users\\\\Alice";
+    expect(redact(escapedHome)).not.toContain("Alice");
+    expect(redact(escapedHome)).toContain("<redacted>");
+  });
+});

@@ -43,6 +43,9 @@ export interface DoctorOptions {
   projectRoot?: string;
   env?: Readonly<Record<string, string | undefined>>;
   execProbe?: ExecProbe;
+  /** Optional plan/lock JSON for adapter+model cross-check (CR-M-038). */
+  plan?: unknown;
+  lock?: unknown;
 }
 
 const PUBLIC_SCHEMA_FILES = [
@@ -664,6 +667,9 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   }
   checks.push(checkHttpToken(env), checkRouteBilling(env));
   checks.push(await checkMcpToolInventory(pluginRoot), checkRootPolicy(env), checkModelRoute(env));
+  if (options.plan !== undefined || options.lock !== undefined) {
+    checks.push(checkModelRouteFromPlan(options.plan ?? options.lock));
+  }
 
   return DoctorReportSchema.parse({
     protocol_version: PROTOCOL_VERSION,

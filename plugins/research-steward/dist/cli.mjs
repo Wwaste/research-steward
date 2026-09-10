@@ -72959,6 +72959,51 @@ function checkRootPolicy(env) {
   };
 }
 var PLACEHOLDER_MODEL = /replace|your-model|example-model|changeme|todo-model/i;
+function checkModelRouteFromPlan(plan) {
+  const nodes = plan !== null && typeof plan === "object" ? plan.nodes : void 0;
+  if (!Array.isArray(nodes)) {
+    return {
+      id: "route.model",
+      status: "skipped",
+      summary: "No plan nodes supplied; adapter/model cross-check skipped."
+    };
+  }
+  const issues = [];
+  for (const node2 of nodes) {
+    if (node2 === null || typeof node2 !== "object") continue;
+    const adapter = node2.adapter;
+    const model = node2.model;
+    if (typeof adapter !== "string" || typeof model !== "string" || model === "") continue;
+    if (PLACEHOLDER_MODEL.test(model)) {
+      issues.push(`node uses a placeholder model name`);
+      continue;
+    }
+    const modelVendor = /gpt|o1|claude|sonnet|haiku|deepseek|gemini|grok|kimi|qoder/i.exec(
+      model
+    );
+    if (modelVendor === null) continue;
+    const vendor = modelVendor[0].toLowerCase();
+    const adapterVendor = adapter === "kimi" ? "kimi" : adapter === "grok" ? "grok" : adapter === "qoder" ? "qoder" : adapter === "fake" ? null : null;
+    if (adapterVendor !== null && !vendor.includes(adapterVendor) && adapterVendor !== "qoder") {
+      if (adapterVendor === "grok" && !vendor.includes("grok") || adapterVendor === "kimi" && !vendor.includes("kimi")) {
+        issues.push(`adapter/model vendor mismatch`);
+      }
+    }
+  }
+  if (issues.length > 0) {
+    return {
+      id: "route.model",
+      status: "fail",
+      summary: `Plan model-route check found ${issues.length} issue(s) (details withheld).`,
+      remediation: "Align each node model with its adapter, or use the fake adapter for rehearsal."
+    };
+  }
+  return {
+    id: "route.model",
+    status: "pass",
+    summary: "Plan adapter/model pairs look consistent (static heuristic)."
+  };
+}
 function checkModelRoute(env) {
   const model = env["RESEARCH_STEWARD_MODEL"] ?? env["RESEARCH_STEWARD_DEFAULT_MODEL"];
   if (model === void 0 || model.trim() === "") {
@@ -73006,6 +73051,9 @@ async function runDoctor(options = {}) {
   }
   checks.push(checkHttpToken(env), checkRouteBilling(env));
   checks.push(await checkMcpToolInventory(pluginRoot), checkRootPolicy(env), checkModelRoute(env));
+  if (options.plan !== void 0 || options.lock !== void 0) {
+    checks.push(checkModelRouteFromPlan(options.plan ?? options.lock));
+  }
   return DoctorReportSchema.parse({
     protocol_version: PROTOCOL_VERSION,
     checked_at: (/* @__PURE__ */ new Date()).toISOString(),

@@ -524,3 +524,11 @@ describe("four-value provider routes (CR-M-040)", () => {
     expect(ForecastSchema.parse(unknown).per_provider["kimi"]!.route).toBe("unknown");
   });
 });
+
+describe("metered/unknown route warnings (CR-M-040 blocking warning)", () => {
+  it("routeWarning returns blocking severity for metered_api and unknown", () => {
+    expect(routeWarning("future-metered", "metered_api")?.severity).toBe("blocking");
+    expect(routeWarning("mystery", "unknown")?.severity).toBe("blocking");
+    expect(routeWarning("kimi", "subscription_cli")).toBeUndefined();
+  });
+});
