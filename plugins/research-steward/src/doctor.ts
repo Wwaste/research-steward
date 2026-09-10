@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, statSync } from "node:fs";
 import { access, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -52,6 +52,31 @@ const PUBLIC_SCHEMA_FILES = [
 ] as const;
 
 const MINIMUM_SKILL_DIRECTORIES = 8;
+
+/**
+ * MCP tools the plugin is expected to register. Kept in sync with
+ * src/server.ts by tests/wiring.test.ts (tool-count) and
+ * tests/doctor.test.ts (inventory match). After adding a tool in server.ts,
+ * append its name here in the same commit (RS-V1-SUP-006).
+ */
+export const EXPECTED_MCP_TOOLS: readonly string[] = [
+  "research_init_project",
+  "research_freeze_packet",
+  "research_append_turn",
+  "research_list_events",
+  "research_get_status",
+  "research_render_views",
+  "research_run_roundtable",
+  "research_adjudicate",
+  "research_verify_project",
+  "research_resolve_blocks",
+  "research_record_provisional_review",
+  "research_record_acceptance",
+  "research_package_handoff",
+  "research_doctor",
+  "research_build_plan",
+  "research_dry_run"
+];
 
 interface ProviderDescriptor {
   id: "qoder" | "kimi" | "grok";
@@ -446,6 +471,80 @@ function checkRouteBilling(env: Readonly<Record<string, string | undefined>>): D
   };
 }
 
+function checkMcpToolInventory(pluginRoot: string): DoctorCheck {
+  // Inventory is the published contract, not a live process probe: doctor
+  // never starts the MCP server. The wiring test asserts server.ts registers
+  // exactly these names.
+  const count = EXPECTED_MCP_TOOLS.length;
+  return {
+    id: "mcp.tools",
+    status: "pass",
+    summary: `Expected MCP tool inventory lists ${count} tools.`
+  };
+}
+
+function checkRootPolicy(env: Readonly<Record<string, string | undefined>>): DoctorCheck {
+  const raw = env["RESEARCH_STEWARD_ROOTS"] ?? "";
+  const parts = raw
+    .split(/[:;]/)
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
+  if (parts.length === 0) {
+    return {
+      id: "roots.policy",
+      status: "warn",
+      summary: "RESEARCH_STEWARD_ROOTS is unset; MCP/HTTP modes that require allowed roots will refuse to resolve projects.",
+      remediation: "Export RESEARCH_STEWARD_ROOTS with one or more existing project parent directories."
+    };
+  }
+  const bad = parts.filter((part) => {
+    try {
+      return !statSync(part).isDirectory();
+    } catch {
+      return true;
+    }
+  });
+  if (bad.length > 0) {
+    return {
+      id: "roots.policy",
+      status: "fail",
+      summary: `RESEARCH_STEWARD_ROOTS lists ${bad.length} path(s) that are not existing directories (values withheld).`,
+      remediation: "Point RESEARCH_STEWARD_ROOTS only at directories that exist on this machine."
+    };
+  }
+  return {
+    id: "roots.policy",
+    status: "pass",
+    summary: `RESEARCH_STEWARD_ROOTS lists ${parts.length} existing director${parts.length === 1 ? "y" : "ies"}.`
+  };
+}
+
+const PLACEHOLDER_MODEL = /replace|your-model|example-model|changeme|todo-model/i;
+
+function checkModelRoute(env: Readonly<Record<string, string | undefined>>): DoctorCheck {
+  const model = env["RESEARCH_STEWARD_MODEL"] ?? env["RESEARCH_STEWARD_DEFAULT_MODEL"];
+  if (model === undefined || model.trim() === "") {
+    return {
+      id: "route.model",
+      status: "skipped",
+      summary: "No RESEARCH_STEWARD_MODEL is set; provider CLI defaults apply."
+    };
+  }
+  if (PLACEHOLDER_MODEL.test(model) || model.length > 100) {
+    return {
+      id: "route.model",
+      status: "fail",
+      summary: "The configured model name looks like a placeholder or is implausibly long (value withheld).",
+      remediation: "Set RESEARCH_STEWARD_MODEL to a real model identifier your subscription CLI accepts."
+    };
+  }
+  return {
+    id: "route.model",
+    status: "pass",
+    summary: "RESEARCH_STEWARD_MODEL is set and does not look like a placeholder."
+  };
+}
+
 function aggregateOverall(checks: readonly DoctorCheck[]): "pass" | "warn" | "fail" {
   // skipped is deliberately neutral: it neither upgrades nor downgrades.
   if (checks.some((item) => item.status === "fail")) return "fail";
@@ -472,6 +571,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     checks.push(providerAuthCheck(provider));
   }
   checks.push(checkHttpToken(env), checkRouteBilling(env));
+  checks.push(checkMcpToolInventory(pluginRoot), checkRootPolicy(env), checkModelRoute(env));
 
   return DoctorReportSchema.parse({
     protocol_version: PROTOCOL_VERSION,

@@ -29,6 +29,13 @@ const ProviderForecastSchema = z
   .object({
     nodes: z.number().int().min(1),
     worst_case_invocations: z.number().int().min(1),
+    // Upper bound on how many nodes of this adapter can run in one scheduler
+    // batch: min(plan.max_parallel, count of this adapter in the widest layer)
+    // is not computed per-layer here; we use min(max_parallel, adapter nodes)
+    // which is a true upper bound on simultaneous same-adapter invocations
+    // only when the scheduler never runs two nodes of one adapter past
+    // max_parallel — which is exactly what max_parallel limits (RS-V1-SUP-009).
+    max_parallel_width: z.number().int().min(1),
     route: z.enum(["subscription_cli", "fake"])
   })
   .strict();
@@ -179,10 +186,35 @@ export function buildForecast(rawPlan: unknown): Forecast {
   const attemptsPerNode = plan.limits.retry_limit + 1;
   const perProvider: Record<
     string,
-    { nodes: number; worst_case_invocations: number; route: "subscription_cli" | "fake" }
+    {
+      nodes: number;
+      worst_case_invocations: number;
+      max_parallel_width: number;
+      route: "subscription_cli" | "fake";
+    }
   > = {};
   const warnings: ForecastWarning[] = [];
   const inspectedAdapters = new Set<string>();
+  // Adapter nodes inside the single widest layer give a tighter per-provider
+  // concurrency bound than the global widest layer alone (RS-V1-SUP-009).
+  const adapterInWidestLayer = new Map<string, number>();
+  let widestDepth = 0;
+  let widestSize = 0;
+  for (const [depth, size] of layerSizes) {
+    if (size > widestSize) {
+      widestSize = size;
+      widestDepth = depth;
+    }
+  }
+  for (const [nodeId, depth] of depths) {
+    if (depth !== widestDepth) continue;
+    const node = plan.nodes.find((candidate) => candidate.id === nodeId);
+    if (!node) continue;
+    adapterInWidestLayer.set(
+      node.adapter,
+      (adapterInWidestLayer.get(node.adapter) ?? 0) + 1
+    );
+  }
   for (const node of plan.nodes) {
     if (!inspectedAdapters.has(node.adapter)) {
       inspectedAdapters.add(node.adapter);
@@ -192,6 +224,10 @@ export function buildForecast(rawPlan: unknown): Forecast {
     const entry = perProvider[node.adapter] ?? {
       nodes: 0,
       worst_case_invocations: 0,
+      max_parallel_width: Math.min(
+        plan.limits.max_parallel,
+        Math.max(1, adapterInWidestLayer.get(node.adapter) ?? 1)
+      ),
       route: representableRoute(node.adapter)
     };
     entry.nodes += 1;

@@ -13,10 +13,17 @@ import { ResearchStewardError, atomicWriteFile, errorMessage } from "./utils.js"
 import { readEvents } from "./store.js";
 
 /**
- * The ledger index is a disposable cache. Authority always stays with the
- * per-event hash-chain verification in store.ts: readEventsWithIndex still
- * runs the full readEvents validation, and any disagreement between index and
- * ledger fails closed instead of being repaired silently.
+ * The ledger index is a disposable **integrity / location cache**. Authority
+ * always stays with the per-event hash-chain verification in store.ts:
+ * readEventsWithIndex still runs the full readEvents validation, and any
+ * disagreement between index and ledger fails closed instead of being
+ * repaired silently.
+ *
+ * RS-V1-SUP-015 boundary: checkpoints record `file_name` (the event file
+ * under .research/events/) as an auditable location. This is **not** yet a
+ * skip-scan performance index — readEventsWithIndex still walks every event.
+ * A true seek/skip read path and 10k–100k performance regression gates remain
+ * open work; do not treat this module as a large-ledger fast path.
  */
 
 const INDEX_RELATIVE_PATH = ".research/cache/ledger-index.json";
@@ -28,7 +35,14 @@ const LedgerIndexCheckpointSchema = z
     sequence: z.number().int().positive(),
     event_id: z.string().uuid(),
     event_hash: z.string().regex(/^[a-f0-9]{64}$/),
-    cumulative_count: z.number().int().positive()
+    cumulative_count: z.number().int().positive(),
+    // Location of the checkpointed event (RS-V1-SUP-015). Presence is
+    // required for newly built indexes; older v1 indexes without file_name
+    // still parse for integrity checks.
+    file_name: z
+      .string()
+      .regex(/^\d{8}-[0-9a-f-]{36}\.json$/)
+      .optional()
   })
   .strict();
 
@@ -76,7 +90,8 @@ export async function buildLedgerIndex(
         sequence: event.sequence,
         event_id: event.event_id,
         event_hash: event.event_hash,
-        cumulative_count: cumulativeCount
+        cumulative_count: cumulativeCount,
+        file_name: `${String(event.sequence).padStart(8, "0")}-${event.event_id}.json`
       });
     }
   }
@@ -86,7 +101,8 @@ export async function buildLedgerIndex(
       sequence: lastEvent.sequence,
       event_id: lastEvent.event_id,
       event_hash: lastEvent.event_hash,
-      cumulative_count: events.length
+      cumulative_count: events.length,
+      file_name: `${String(lastEvent.sequence).padStart(8, "0")}-${lastEvent.event_id}.json`
     });
   }
   return LedgerIndexSchema.parse({

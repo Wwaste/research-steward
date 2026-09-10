@@ -198,11 +198,13 @@ describe("buildForecast", () => {
     expect(forecast.per_provider["kimi"]).toEqual({
       nodes: 2,
       worst_case_invocations: 4,
+      max_parallel_width: 2,
       route: "subscription_cli"
     });
     expect(forecast.per_provider["fake"]).toEqual({
       nodes: 1,
       worst_case_invocations: 2,
+      max_parallel_width: 1,
       route: "fake"
     });
   });
@@ -231,6 +233,24 @@ describe("buildForecast", () => {
     // 2 nodes × 3 attempts
     expect(forecast.prompt_char_upper_bound).toBe(12_345 * 2 * 3);
     expect(forecast.output_char_upper_bound).toBe(6_789 * 2 * 3);
+  });
+
+  it("reports per-provider max_parallel_width from the widest layer (RS-V1-SUP-009)", () => {
+    // Widest layer is {a,b,c} all kimi; d is qoder downstream.
+    const forecast = buildForecast(
+      plan(
+        [
+          node("a", "kimi"),
+          node("b", "kimi"),
+          node("c", "kimi"),
+          node("d", "qoder", ["a", "b", "c"])
+        ],
+        { max_parallel: 8 }
+      )
+    );
+    expect(forecast.per_provider["kimi"]!.max_parallel_width).toBe(3);
+    expect(forecast.per_provider["qoder"]!.max_parallel_width).toBe(1);
+    expect(forecast.per_provider["kimi"]!.nodes).toBe(3);
   });
 
   it("uses the critical-path estimate when it beats max_wall_time_ms", () => {

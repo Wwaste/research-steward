@@ -76,7 +76,7 @@ describe("doctor report", () => {
       nodeVersion: "v22.4.0",
       pluginRoot: await pluginFixture(),
       projectRoot: await projectFixture(),
-      env: {},
+      env: { RESEARCH_STEWARD_ROOTS: await temporaryDirectory() },
       execProbe: allFound
     });
 
@@ -97,7 +97,10 @@ describe("doctor report", () => {
       "provider.grok",
       "provider.grok.auth",
       "http.token",
-      "route.billing"
+      "route.billing",
+      "mcp.tools",
+      "roots.policy",
+      "route.model"
     ]);
     for (const id of [
       "node.version",
@@ -151,6 +154,41 @@ describe("doctor report", () => {
     expect(kimi.status).toBe("warn");
     expect(kimi.remediation).toContain("RESEARCH_STEWARD_KIMI_PATH");
     expect(report.overall).toBe("warn");
+  });
+
+  it("reports MCP tool inventory, root policy, and model-route checks (RS-V1-SUP-006)", async () => {
+    const report = await runDoctor({
+      nodeVersion: "v22.4.0",
+      pluginRoot: await pluginFixture(),
+      env: { RESEARCH_STEWARD_ROOTS: await temporaryDirectory() },
+      execProbe: allFound
+    });
+    expect(check(report, "mcp.tools").status).toBe("pass");
+    expect(check(report, "mcp.tools").summary).toContain("16 tools");
+    expect(check(report, "roots.policy").status).toBe("pass");
+    expect(check(report, "route.model").status).toBe("skipped");
+  });
+
+  it("fails route.model on a placeholder model name (wrong-model case)", async () => {
+    const report = await runDoctor({
+      nodeVersion: "v22.4.0",
+      pluginRoot: await pluginFixture(),
+      env: { RESEARCH_STEWARD_MODEL: "replace-me-model" },
+      execProbe: allFound
+    });
+    expect(check(report, "route.model").status).toBe("fail");
+    expect(check(report, "route.model").summary).not.toContain("replace-me-model");
+    expect(report.overall).toBe("fail");
+  });
+
+  it("fails roots.policy when RESEARCH_STEWARD_ROOTS points at a missing path", async () => {
+    const report = await runDoctor({
+      nodeVersion: "v22.4.0",
+      pluginRoot: await pluginFixture(),
+      env: { RESEARCH_STEWARD_ROOTS: path.join(await temporaryDirectory(), "nope") },
+      execProbe: allFound
+    });
+    expect(check(report, "roots.policy").status).toBe("fail");
   });
 
   it("fails project.root when the directory is not writable", async () => {
@@ -346,7 +384,7 @@ describe("doctor fix round 1", () => {
     });
 
     expect(DoctorReportSchema.parse(report)).toEqual(report);
-    expect(report.checks).toHaveLength(14);
+    expect(report.checks).toHaveLength(17);
     for (const id of ["provider.qoder", "provider.kimi", "provider.grok"]) {
       const item = check(report, id);
       expect(item.status, id).toBe("warn");
