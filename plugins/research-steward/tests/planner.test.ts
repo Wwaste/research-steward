@@ -12,6 +12,7 @@ import {
 } from "../src/presets.js";
 import {
   WorkflowLockSchema,
+  assertPlanLockPairComplete,
   buildPlan,
   validatePlanStructure,
   writeLock,
@@ -567,5 +568,21 @@ describe("planner wiring-batch additions", () => {
         overrides: { mode: "mixed" }
       })
     ).toThrowError(expect.objectContaining({ code: "MIXED_MODE_VISIBILITY_REQUIRED" }));
+  });
+});
+
+describe("pair-pending marker (CR-M-029)", () => {
+  it("clears the marker on success and rejects readers while pending", async () => {
+    const dir = await temporaryDirectory();
+    const planPath = path.join(dir, "plan.json");
+    const lockPath = path.join(dir, "workflow.lock.json");
+    const { plan, lock } = build("quick-review");
+    await writePlanAndLock(planPath, plan, lockPath, lock);
+    await expect(assertPlanLockPairComplete(planPath)).resolves.toBeUndefined();
+    // Simulate a crash: leave a marker and ensure readers fail closed.
+    await writeFile(`${planPath}.pair-pending`, "{}\n", "utf8");
+    await expect(assertPlanLockPairComplete(planPath)).rejects.toMatchObject({
+      code: "PLAN_LOCK_PAIR_INCOMPLETE"
+    });
   });
 });

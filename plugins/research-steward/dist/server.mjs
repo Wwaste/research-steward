@@ -73115,7 +73115,7 @@ async function runDoctor(options = {}) {
 }
 
 // src/planner.ts
-import { rm as rm6, realpath as realpath4 } from "node:fs/promises";
+import { access as access4, rm as rm6, realpath as realpath4 } from "node:fs/promises";
 import path7 from "node:path";
 
 // src/presets.ts
@@ -73749,30 +73749,43 @@ async function writePlanAndLock(planPath, plan, lockPath, lock) {
       { plan_path: canonicalPlan, lock_path: canonicalLock }
     );
   }
+  const markerPath = `${planPath}.pair-pending`;
   const planBody = `${JSON.stringify(RoundtablePlanSchema.parse(plan), null, 2)}
 `;
   const lockBody = `${JSON.stringify(WorkflowLockSchema.parse(lock), null, 2)}
 `;
-  await writeImmutableFile(planPath, planBody);
+  await writeImmutableFile(
+    markerPath,
+    `${JSON.stringify({ plan_path: planPath, lock_path: lockPath, at: (/* @__PURE__ */ new Date()).toISOString() })}
+`
+  );
   try {
-    await writeImmutableFile(lockPath, lockBody);
-  } catch (error61) {
-    let leftover = null;
+    await writeImmutableFile(planPath, planBody);
     try {
-      await rm6(planPath, { force: true });
-    } catch {
-      leftover = planPath;
+      await writeImmutableFile(lockPath, lockBody);
+    } catch (error61) {
+      let leftover = null;
+      try {
+        await rm6(planPath, { force: true });
+      } catch {
+        leftover = planPath;
+      }
+      await rm6(markerPath, { force: true }).catch(() => void 0);
+      if (leftover !== null) {
+        throw new ResearchStewardError(
+          error61.code === "EEXIST" ? "EEXIST" : "PLAN_LOCK_ROLLBACK_FAILED",
+          `${error61.message} (rollback could not remove ${leftover})`,
+          {
+            cause_code: error61.code,
+            leftover_plan_path: leftover
+          }
+        );
+      }
+      throw error61;
     }
-    if (leftover !== null) {
-      throw new ResearchStewardError(
-        error61.code === "EEXIST" ? "EEXIST" : "PLAN_LOCK_ROLLBACK_FAILED",
-        `${error61.message} (rollback could not remove ${leftover})`,
-        {
-          cause_code: error61.code,
-          leftover_plan_path: leftover
-        }
-      );
-    }
+    await rm6(markerPath, { force: true });
+  } catch (error61) {
+    await rm6(markerPath, { force: true }).catch(() => void 0);
     throw error61;
   }
 }

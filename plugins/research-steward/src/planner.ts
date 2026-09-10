@@ -7,7 +7,7 @@
  * semantics via writeImmutableFile().
  */
 
-import { rm, realpath } from "node:fs/promises";
+import { access, rm, realpath } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { validateGraph } from "./workflow.js";
@@ -276,22 +276,11 @@ export async function writeLock(filePath: string, lock: WorkflowLock): Promise<v
 }
 
 /**
- * Persist a plan and its lock as one unit (RS-V1-SUP-011). Writing them as
- * two independent writeImmutableFile calls can leave a half-committed pair
- * when the second fails. This helper:
- *   1. rejects identical destinations (after resolve + parent realpath);
- *   2. writes the plan first;
- *   3. if the lock write fails, removes the plan it just created so the
- *      caller never sees a plan without its lock. If that rollback rm also
- *      fails, the leftover path is attached to the error details (CR-M-031).
- * Existing destinations are still never overwritten: the first EEXIST wins
- * and nothing is deleted that this call did not create.
+ * Persist a plan and its lock as one unit (RS-V1-SUP-011).
  *
- * Deviation (CR-M-029): crash atomicity across two files is not implemented.
- * A process kill between the two writes can still leave a plan without a
- * lock. Codex asked for a recoverable transaction marker if full atomicity
- * is not done; that marker is deferred and recorded in the Task 1.3 milestone
- * for Codex adjudication.
+ * Crash safety (CR-M-029): a `.pair-pending` marker is written first; it is
+ * removed only after both plan and lock land. Readers that require a complete
+ * pair must call assertPlanLockPairComplete / reject when the marker exists.
  */
 export async function writePlanAndLock(
   planPath: string,
@@ -308,32 +297,59 @@ export async function writePlanAndLock(
       { plan_path: canonicalPlan, lock_path: canonicalLock }
     );
   }
+  const markerPath = `${planPath}.pair-pending`;
   const planBody = `${JSON.stringify(RoundtablePlanSchema.parse(plan), null, 2)}\n`;
   const lockBody = `${JSON.stringify(WorkflowLockSchema.parse(lock), null, 2)}\n`;
-  await writeImmutableFile(planPath, planBody);
+  await writeImmutableFile(
+    markerPath,
+    `${JSON.stringify({ plan_path: planPath, lock_path: lockPath, at: new Date().toISOString() })}\n`
+  );
   try {
-    await writeImmutableFile(lockPath, lockBody);
-  } catch (error) {
-    let leftover: string | null = null;
+    await writeImmutableFile(planPath, planBody);
     try {
-      await rm(planPath, { force: true });
-    } catch {
-      leftover = planPath;
+      await writeImmutableFile(lockPath, lockBody);
+    } catch (error) {
+      let leftover: string | null = null;
+      try {
+        await rm(planPath, { force: true });
+      } catch {
+        leftover = planPath;
+      }
+      await rm(markerPath, { force: true }).catch(() => undefined);
+      if (leftover !== null) {
+        throw new ResearchStewardError(
+          (error as { code?: string }).code === "EEXIST"
+            ? "EEXIST"
+            : "PLAN_LOCK_ROLLBACK_FAILED",
+          `${(error as Error).message} (rollback could not remove ${leftover})`,
+          {
+            cause_code: (error as NodeJS.ErrnoException).code,
+            leftover_plan_path: leftover
+          }
+        );
+      }
+      throw error;
     }
-    if (leftover !== null) {
-      throw new ResearchStewardError(
-        (error as { code?: string }).code === "EEXIST"
-          ? "EEXIST"
-          : "PLAN_LOCK_ROLLBACK_FAILED",
-        `${(error as Error).message} (rollback could not remove ${leftover})`,
-        {
-          cause_code: (error as NodeJS.ErrnoException).code,
-          leftover_plan_path: leftover
-        }
-      );
-    }
+    await rm(markerPath, { force: true });
+  } catch (error) {
+    await rm(markerPath, { force: true }).catch(() => undefined);
     throw error;
   }
+}
+
+/** Readers that require a complete plan+lock pair must reject a pending marker. */
+export async function assertPlanLockPairComplete(planPath: string): Promise<void> {
+  const markerPath = `${planPath}.pair-pending`;
+  try {
+    await access(markerPath);
+  } catch {
+    return; // no marker — pair is complete or plan was never written
+  }
+  throw new ResearchStewardError(
+    "PLAN_LOCK_PAIR_INCOMPLETE",
+    "A plan/lock write did not finish; remove the .pair-pending marker only after confirming both files.",
+    { marker_path: markerPath }
+  );
 }
 
 async function canonicalForCompare(candidate: string): Promise<string> {
