@@ -59,6 +59,22 @@ export const WorkflowLockSchema = z
     packet_id: PacketIdSchema,
     provider_routes: z.record(z.string(), ProviderRouteSchema),
     skill_ids: z.array(z.string().min(1).max(64)).max(64),
+    // Reproducibility identity (RS-V1-SUP-007): freeze the budget/limits the
+    // plan was built under, and skill fingerprints when available. Skills
+    // currently have no version field in SKILL.md frontmatter; until Task 5.6
+    // catalog lands, fingerprints are empty and the gap is declared.
+    limits_fingerprint: HashSchema,
+    skill_fingerprints: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1).max(64),
+            version: z.string().min(1).max(32).optional(),
+            content_sha256: HashSchema.optional()
+          })
+          .strict()
+      )
+      .max(64),
     capability_gaps: z.array(z.string().min(1).max(2_000)).max(64)
   })
   .strict();
@@ -237,7 +253,12 @@ export function buildPlan(input: BuildPlanInput): { plan: RoundtablePlan; lock: 
     packet_id: parsed.packet_id,
     provider_routes: providerRoutes,
     skill_ids: [...BUILT_IN_SKILL_IDS],
-    capability_gaps: capabilityGaps
+    limits_fingerprint: sha256Text(stableJson(plan.limits)),
+    skill_fingerprints: BUILT_IN_SKILL_IDS.map((id) => ({ id })),
+    capability_gaps: [
+      ...capabilityGaps,
+      "Skill SKILL.md files carry no version field yet; lock records skill ids only until the Task 5.6 catalog can supply versions and content hashes (RS-V1-SUP-007)."
+    ]
   });
 
   return { plan, lock };

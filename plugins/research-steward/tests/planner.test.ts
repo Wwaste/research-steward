@@ -353,6 +353,16 @@ describe("workflow lock", () => {
     expect(JSON.parse(await readFile(target, "utf8"))).toEqual(onDisk);
   });
 
+  it("freezes limits fingerprint and skill identity slots (RS-V1-SUP-007)", () => {
+    const { plan, lock } = build("quick-review");
+    expect(lock.limits_fingerprint).toBe(sha256Text(stableJson(plan.limits)));
+    expect(lock.skill_fingerprints.length).toBe(lock.skill_ids.length);
+    expect(lock.skill_fingerprints.map((entry) => entry.id).sort()).toEqual(
+      [...lock.skill_ids].sort()
+    );
+    expect(lock.capability_gaps.join(" ")).toContain("Skill SKILL.md files carry no version");
+  });
+
   it("writes plan and lock together (RS-V1-SUP-011)", async () => {
     const dir = await temporaryDirectory();
     const planPath = path.join(dir, "plan.json");

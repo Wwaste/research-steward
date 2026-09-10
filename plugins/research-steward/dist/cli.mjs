@@ -73457,6 +73457,18 @@ var WorkflowLockSchema = external_exports.object({
   packet_id: PacketIdSchema,
   provider_routes: external_exports.record(external_exports.string(), ProviderRouteSchema),
   skill_ids: external_exports.array(external_exports.string().min(1).max(64)).max(64),
+  // Reproducibility identity (RS-V1-SUP-007): freeze the budget/limits the
+  // plan was built under, and skill fingerprints when available. Skills
+  // currently have no version field in SKILL.md frontmatter; until Task 5.6
+  // catalog lands, fingerprints are empty and the gap is declared.
+  limits_fingerprint: HashSchema2,
+  skill_fingerprints: external_exports.array(
+    external_exports.object({
+      id: external_exports.string().min(1).max(64),
+      version: external_exports.string().min(1).max(32).optional(),
+      content_sha256: HashSchema2.optional()
+    }).strict()
+  ).max(64),
   capability_gaps: external_exports.array(external_exports.string().min(1).max(2e3)).max(64)
 }).strict();
 var LimitsOverrideSchema = external_exports.object({
@@ -73582,7 +73594,12 @@ function buildPlan(input2) {
     packet_id: parsed.packet_id,
     provider_routes: providerRoutes,
     skill_ids: [...BUILT_IN_SKILL_IDS],
-    capability_gaps: capabilityGaps
+    limits_fingerprint: sha256Text(stableJson(plan.limits)),
+    skill_fingerprints: BUILT_IN_SKILL_IDS.map((id) => ({ id })),
+    capability_gaps: [
+      ...capabilityGaps,
+      "Skill SKILL.md files carry no version field yet; lock records skill ids only until the Task 5.6 catalog can supply versions and content hashes (RS-V1-SUP-007)."
+    ]
   });
   return { plan, lock };
 }

@@ -80,6 +80,37 @@
         "maxLength": 64
       }
     },
+    "limits_fingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "skill_fingerprints": {
+      "maxItems": 64,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "content_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
     "capability_gaps": {
       "maxItems": 64,
       "type": "array",
@@ -100,6 +131,8 @@
     "packet_id",
     "provider_routes",
     "skill_ids",
+    "limits_fingerprint",
+    "skill_fingerprints",
     "capability_gaps"
   ],
   "additionalProperties": false,
