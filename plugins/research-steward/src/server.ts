@@ -526,7 +526,9 @@ export function buildServer(policy: RootPolicy): McpServer {
         project_root: z.string().min(1).max(4_096).optional()
       },
       annotations: {
-        readOnlyHint: true,
+        // Doctor writes a reversible probe file under .research/ when a project
+        // root is supplied (RS-V1-SUP-010); it is idempotent, not read-only.
+        readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: false

@@ -246,8 +246,12 @@ export function buildForecast(rawPlan: unknown): Forecast {
     worst_case_invocations: worstCaseInvocations,
     fake_invocations: fakeInvocations,
     per_provider: perProvider,
-    prompt_char_upper_bound: plan.limits.max_prompt_chars * plan.nodes.length,
-    output_char_upper_bound: plan.limits.max_output_chars * plan.nodes.length,
+    // Character bounds are per invocation, not per node: a node that retries
+    // can consume its prompt/output budget on every attempt (RS-V1-SUP-008).
+    prompt_char_upper_bound:
+      plan.limits.max_prompt_chars * plan.nodes.length * attemptsPerNode,
+    output_char_upper_bound:
+      plan.limits.max_output_chars * plan.nodes.length * attemptsPerNode,
     wall_time_upper_bound_ms: wallTimeUpperBoundMs,
     wall_time_bound_source: criticalPathWins
       ? "critical_path_estimate"

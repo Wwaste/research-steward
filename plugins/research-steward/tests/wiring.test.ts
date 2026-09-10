@@ -50,6 +50,20 @@ describe("phase 1 wiring (doctor, build-plan, dry-run)", () => {
     }
   });
 
+  it("does not advertise research_doctor as read-only (it writes a probe file)", async () => {
+    const root = await initializedProject("Wiring doctor annotations");
+    const { client, close } = await connectedClient(root);
+    try {
+      const tools = await client.listTools();
+      const doctor = tools.tools.find((tool) => tool.name === "research_doctor");
+      expect(doctor).toBeDefined();
+      expect(doctor!.annotations?.readOnlyHint).toBe(false);
+      expect(doctor!.annotations?.idempotentHint).toBe(true);
+    } finally {
+      await close();
+    }
+  });
+
   it("returns a schema-valid doctor report over MCP without touching providers", async () => {
     const root = await initializedProject("Wiring doctor");
     const { client, close } = await connectedClient(root);

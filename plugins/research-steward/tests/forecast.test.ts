@@ -220,15 +220,17 @@ describe("buildForecast", () => {
     expect(forecast.worst_case_invocations).toBe(paidSum);
   });
 
-  it("multiplies the character limits by node count for the char upper bounds", () => {
+  it("multiplies the character limits by node count and retry attempts (RS-V1-SUP-008)", () => {
     const forecast = buildForecast(
       plan([node("a", "kimi"), node("b", "qoder")], {
         max_prompt_chars: 12_345,
-        max_output_chars: 6_789
+        max_output_chars: 6_789,
+        retry_limit: 2
       })
     );
-    expect(forecast.prompt_char_upper_bound).toBe(24_690);
-    expect(forecast.output_char_upper_bound).toBe(13_578);
+    // 2 nodes × 3 attempts
+    expect(forecast.prompt_char_upper_bound).toBe(12_345 * 2 * 3);
+    expect(forecast.output_char_upper_bound).toBe(6_789 * 2 * 3);
   });
 
   it("uses the critical-path estimate when it beats max_wall_time_ms", () => {
@@ -455,10 +457,10 @@ describe("randomized plans with a fixed-seed LCG", () => {
         parsed.limits.max_wall_time_ms
       );
       expect(forecast.prompt_char_upper_bound).toBe(
-        parsed.limits.max_prompt_chars * parsed.nodes.length
+        parsed.limits.max_prompt_chars * parsed.nodes.length * attempts
       );
       expect(forecast.output_char_upper_bound).toBe(
-        parsed.limits.max_output_chars * parsed.nodes.length
+        parsed.limits.max_output_chars * parsed.nodes.length * attempts
       );
       expect(forecast.plan_hash).toBe(sha256Text(stableJson(parsed)));
       expect(ForecastSchema.parse(JSON.parse(JSON.stringify(forecast)))).toEqual(forecast);
