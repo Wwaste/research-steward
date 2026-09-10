@@ -19,7 +19,13 @@
         "delivery_recorded",
         "delivery_verified",
         "block_resolved",
-        "blocked"
+        "blocked",
+        "invocation_started",
+        "invocation_finished",
+        "invocation_cancel_requested",
+        "invocation_cancelled",
+        "invocation_unknown",
+        "invocation_replay_authorized"
       ]
     },
     "run_id": {

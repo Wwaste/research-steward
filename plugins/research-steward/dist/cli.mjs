@@ -57554,8 +57554,16 @@ var EventTypeSchema = external_exports.enum([
   "delivery_recorded",
   "delivery_verified",
   "block_resolved",
-  "blocked"
+  "blocked",
+  // DESIGN-INVOCATION-LEDGER (append-only; older events unaffected)
+  "invocation_started",
+  "invocation_finished",
+  "invocation_cancel_requested",
+  "invocation_cancelled",
+  "invocation_unknown",
+  "invocation_replay_authorized"
 ]);
+var InvocationIdSchema = external_exports.string().min(1).max(64).regex(/^[a-f0-9]{32}$/);
 var EventDraftSchema = external_exports.object({
   type: EventTypeSchema,
   run_id: IdentifierSchema.optional(),

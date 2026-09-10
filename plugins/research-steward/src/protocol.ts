@@ -4,7 +4,7 @@ export const PROTOCOL_VERSION = "1.0" as const;
 export const MAX_EVENT_BYTES = 256_000;
 export const MAX_PATH_LENGTH = 4_096;
 
-const IdentifierSchema = z
+export const IdentifierSchema = z
   .string()
   .min(1)
   .max(64)
@@ -79,8 +79,21 @@ export const EventTypeSchema = z.enum([
   "delivery_recorded",
   "delivery_verified",
   "block_resolved",
-  "blocked"
+  "blocked",
+  // DESIGN-INVOCATION-LEDGER (append-only; older events unaffected)
+  "invocation_started",
+  "invocation_finished",
+  "invocation_cancel_requested",
+  "invocation_cancelled",
+  "invocation_unknown",
+  "invocation_replay_authorized"
 ]);
+
+export const InvocationIdSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-f0-9]{32}$/);
 
 export const EventDraftSchema = z
   .object({
