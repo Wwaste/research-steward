@@ -10,7 +10,7 @@
 // add` against an isolated CODEX_HOME. CI must not use this mode.
 
 import { spawnSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -20,9 +20,12 @@ import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(pluginRoot, "..", "..");
-const EXPECTED_SKILL_COUNT = 17;
-const EXPECTED_TOOL_COUNT = 16;
-const SCHEMA_FILES = [
+const CURRENT_SKILL_COUNT = 17;
+const CURRENT_TOOL_COUNT = 16;
+// v0.1.0 tag surface (RS-V1-SUP-004 tag lane).
+const TAG_SKILL_COUNT = 8;
+const TAG_TOOL_COUNT = 13;
+const CURRENT_SCHEMA_FILES = [
   "project-manifest.schema.json",
   "research-event.schema.json",
   "roundtable-plan.schema.json",
@@ -30,6 +33,12 @@ const SCHEMA_FILES = [
   "workflow-lock.schema.json",
   "forecast.schema.json"
 ];
+const TAG_SCHEMA_FILES = [
+  "project-manifest.schema.json",
+  "research-event.schema.json",
+  "roundtable-plan.schema.json"
+];
+const SCHEMA_FILES = CURRENT_SCHEMA_FILES;
 
 function fail(message) {
   throw new Error(message);
@@ -58,7 +67,7 @@ async function buildReplica(replicaRoot) {
   }
 }
 
-async function checkStaticSurface(replicaRoot) {
+async function checkStaticSurface(replicaRoot, options = {}) {
   const manifest = JSON.parse(
     await readFile(path.join(replicaRoot, ".codex-plugin", "plugin.json"), "utf8")
   );
@@ -69,8 +78,9 @@ async function checkStaticSurface(replicaRoot) {
     withFileTypes: true
   });
   const skillDirs = skillEntries.filter((entry) => entry.isDirectory());
-  if (skillDirs.length !== EXPECTED_SKILL_COUNT) {
-    fail(`expected exactly ${EXPECTED_SKILL_COUNT} skills, found ${skillDirs.length}`);
+  const expectedSkills = options.expectedSkillCount ?? CURRENT_SKILL_COUNT;
+  if (skillDirs.length !== expectedSkills) {
+    fail(`expected exactly ${expectedSkills} skills, found ${skillDirs.length}`);
   }
   for (const skill of skillDirs) {
     await stat(path.join(replicaRoot, "skills", skill.name, "SKILL.md")).catch(() =>
@@ -198,8 +208,96 @@ async function runCodexCliMode() {
   }
 }
 
+
+async function runFromTagMode(tag) {
+  const { spawnSync: sp } = await import("node:child_process");
+  const exportRoot = await mkdtemp(path.join(os.tmpdir(), "research-steward-tag-"));
+  try {
+    const archive = path.join(exportRoot, "plugin.tar");
+    const out = sp(
+      "git",
+      ["-C", repoRoot, "archive", "--format=tar", tag, "plugins/research-steward"],
+      { encoding: "buffer", maxBuffer: 64 * 1024 * 1024 }
+    );
+    if (out.status !== 0) {
+      fail(`git archive ${tag} failed with status ${out.status}`);
+    }
+    await writeFile(archive, out.stdout);
+    const untar = sp("tar", ["-xf", archive, "-C", exportRoot], { stdio: "inherit" });
+    if (untar.status !== 0) fail(`tar extract failed with status ${untar.status}`);
+    const tagPluginRoot = path.join(exportRoot, "plugins", "research-steward");
+    // Minimal surface check against the *tag* tree (not the working tree).
+    const skillsDir = path.join(tagPluginRoot, "skills");
+    const skillEntries = await readdir(skillsDir, { withFileTypes: true });
+    const skillDirs = skillEntries.filter((e) => e.isDirectory());
+    if (skillDirs.length !== TAG_SKILL_COUNT) {
+      fail(`tag ${tag} expected ${TAG_SKILL_COUNT} skills, found ${skillDirs.length}`);
+    }
+    for (const bundle of ["cli.mjs", "server.mjs"]) {
+      await stat(path.join(tagPluginRoot, "dist", bundle)).catch(() =>
+        fail(`tag ${tag} missing dist/${bundle}`)
+      );
+    }
+    for (const schema of TAG_SCHEMA_FILES) {
+      await stat(path.join(tagPluginRoot, "schemas", schema)).catch(() =>
+        fail(`tag ${tag} missing schema ${schema}`)
+      );
+    }
+    // Drive the tag's bundled server for a first-call init.
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "research-steward-tag-proj-"));
+    try {
+      const env = { ...process.env };
+      delete env.RESEARCH_STEWARD_ROOTS;
+      const client = new Client(
+        { name: "research-steward-tag-smoke", version: "1.0.0" },
+        { capabilities: { roots: {} } }
+      );
+      client.setRequestHandler(ListRootsRequestSchema, async () => ({
+        roots: [{ uri: pathToFileURL(projectRoot).href, name: "tag-smoke-root" }]
+      }));
+      const transport = new StdioClientTransport({
+        command: process.execPath,
+        args: [path.join(tagPluginRoot, "dist", "server.mjs")],
+        cwd: tagPluginRoot,
+        env
+      });
+      await client.connect(transport);
+      const tools = await client.listTools();
+      if (tools.tools.length !== TAG_TOOL_COUNT) {
+        fail(`tag ${tag} expected ${TAG_TOOL_COUNT} tools, found ${tools.tools.length}`);
+      }
+      const initialized = await client.callTool({
+        name: "research_init_project",
+        arguments: { project_root: projectRoot, title: "Tag install smoke" }
+      });
+      if (initialized.isError) {
+        fail(`tag ${tag} research_init_project failed`);
+      }
+      await client.close();
+      process.stdout.write(
+        `${JSON.stringify({
+          mode: "git-archive-tag",
+          tag,
+          skills: skillDirs.length,
+          tools: tools.tools.length,
+          init: "pass"
+        })}\n`
+      );
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  } finally {
+    await rm(exportRoot, { recursive: true, force: true });
+  }
+}
+
 try {
-  if (process.argv.includes("--use-codex-cli")) {
+  const tagIdx = process.argv.indexOf("--from-tag");
+  if (tagIdx !== -1) {
+    const tag = process.argv[tagIdx + 1];
+    if (!tag) fail("--from-tag requires a tag name");
+    await runFromTagMode(tag);
+  } else if (process.argv.includes("--use-codex-cli")) {
     await runCodexCliMode();
   } else {
     await runReplicaMode();
