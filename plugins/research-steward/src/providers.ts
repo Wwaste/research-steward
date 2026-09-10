@@ -363,7 +363,8 @@ function runProcess(
   timeoutMs: number,
   maximumOutput: number,
   adapter: RoundtableNode["adapter"],
-  stdinText?: string
+  stdinText?: string,
+  signal?: AbortSignal
 ): Promise<{ stdout: string; stderr: string; exitCode: number; durationMs: number }> {
   return new Promise((resolve, reject) => {
     const started = Date.now();
@@ -408,6 +409,18 @@ function runProcess(
     }, timeoutMs);
     timer.unref();
 
+    let cancelled = false;
+    const onAbort = (): void => {
+      cancelled = true;
+      terminateTree("SIGTERM");
+      killTimer = setTimeout(() => terminateTree("SIGKILL"), 2_000);
+      killTimer.unref();
+    };
+    if (signal) {
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    }
+
     child.stdout!.setEncoding("utf8");
     child.stderr!.setEncoding("utf8");
     child.stdout!.on("data", (chunk: string) => {
@@ -435,7 +448,17 @@ function runProcess(
     child.once("close", (code) => {
       clearTimeout(timer);
       if (killTimer) clearTimeout(killTimer);
+      if (signal) signal.removeEventListener("abort", onAbort);
       if (settled) return;
+      if (cancelled) {
+        settled = true;
+        reject(
+          new ResearchStewardError("PROVIDER_CANCELLED", "Provider process was cancelled.", {
+            exit_code: code
+          })
+        );
+        return;
+      }
       settled = true;
       const safeDetails = {
         duration_ms: Date.now() - started,
@@ -491,7 +514,8 @@ export async function runProvider(
   node: RoundtableNode,
   prompt: string,
   _projectRoot: string,
-  maximumOutput: number
+  maximumOutput: number,
+  options?: { signal?: AbortSignal }
 ): Promise<ProviderRunResult> {
   const defaults = adapterDefaults(node);
 
@@ -602,7 +626,8 @@ export async function runProvider(
       remainingMs,
       maximumOutput,
       node.adapter,
-      node.adapter === "qoder" ? prompt : undefined
+      node.adapter === "qoder" ? prompt : undefined,
+      options?.signal
     );
   } finally {
     release?.();

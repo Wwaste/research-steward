@@ -71798,7 +71798,7 @@ function normalizeModelOutput(value) {
   }
   return record2;
 }
-function runProcess(executable, args, cwd, timeoutMs, maximumOutput, adapter, stdinText) {
+function runProcess(executable, args, cwd, timeoutMs, maximumOutput, adapter, stdinText, signal) {
   return new Promise((resolve, reject) => {
     const started = Date.now();
     const detached = process.platform !== "win32";
@@ -71820,12 +71820,12 @@ function runProcess(executable, args, cwd, timeoutMs, maximumOutput, adapter, st
       child.stdin.on("error", () => void 0);
       child.stdin.end(stdinText);
     }
-    const terminateTree = (signal) => {
+    const terminateTree = (signal2) => {
       try {
         if (detached && child.pid) {
-          process.kill(-child.pid, signal);
+          process.kill(-child.pid, signal2);
         } else {
-          child.kill(signal);
+          child.kill(signal2);
         }
       } catch {
       }
@@ -71837,6 +71837,17 @@ function runProcess(executable, args, cwd, timeoutMs, maximumOutput, adapter, st
       killTimer.unref();
     }, timeoutMs);
     timer.unref();
+    let cancelled = false;
+    const onAbort = () => {
+      cancelled = true;
+      terminateTree("SIGTERM");
+      killTimer = setTimeout(() => terminateTree("SIGKILL"), 2e3);
+      killTimer.unref();
+    };
+    if (signal) {
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    }
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
@@ -71864,7 +71875,17 @@ function runProcess(executable, args, cwd, timeoutMs, maximumOutput, adapter, st
     child.once("close", (code) => {
       clearTimeout(timer);
       if (killTimer) clearTimeout(killTimer);
+      if (signal) signal.removeEventListener("abort", onAbort);
       if (settled) return;
+      if (cancelled) {
+        settled = true;
+        reject(
+          new ResearchStewardError("PROVIDER_CANCELLED", "Provider process was cancelled.", {
+            exit_code: code
+          })
+        );
+        return;
+      }
       settled = true;
       const safeDetails = {
         duration_ms: Date.now() - started,
@@ -71914,7 +71935,7 @@ function modelOutputContract() {
   "decisions": [{"finding_id":"stable-id", "disposition":"accept|partial|reject|defer", "rationale":"why", "action":"", "owner":"", "change_evidence":""}]
 }`;
 }
-async function runProvider(node2, prompt, _projectRoot, maximumOutput) {
+async function runProvider(node2, prompt, _projectRoot, maximumOutput, options) {
   const defaults = adapterDefaults(node2);
   if (node2.adapter === "fake") {
     if (process.env["RESEARCH_STEWARD_ENABLE_FAKE_ADAPTER"] !== "1") {
@@ -72008,7 +72029,8 @@ async function runProvider(node2, prompt, _projectRoot, maximumOutput) {
       remainingMs,
       maximumOutput,
       node2.adapter,
-      node2.adapter === "qoder" ? prompt : void 0
+      node2.adapter === "qoder" ? prompt : void 0,
+      options?.signal
     );
   } finally {
     release?.();
