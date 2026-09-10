@@ -24,7 +24,7 @@ describe("permit slots (DESIGN-BUDGET-PERMITS)", () => {
     ]);
     const fulfilled = results.filter((r) => r.status === "fulfilled");
     expect(fulfilled.length).toBe(1);
-    const handle = (fulfilled[0] as PromiseFulfilledResult<{ release: () => Promise<void> }).value;
+    const handle = (fulfilled[0] as { value: { release: () => Promise<void> } }).value;
     await handle.release();
   });
 
