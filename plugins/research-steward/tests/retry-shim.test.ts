@@ -116,8 +116,13 @@ describe("real shim quota (CR-M-046)", () => {
     const lines = (await readFile(counterPath, "utf8")).trim().split("\n").filter(Boolean);
     expect(lines).toHaveLength(1);
     const events = await readEvents(root);
+    // CR-M-058: attempt_evidence lives on the terminal agent_contribution
+    // (invocation_finished also carries failure_class but not the evidence array).
     const failure = events.find(
-      (e) => e.metadata && (e.metadata as Record<string, unknown>)["failure_class"] === "quota"
+      (e) =>
+        e.type === "agent_contribution" &&
+        e.metadata &&
+        (e.metadata as Record<string, unknown>)["failure_class"] === "quota"
     );
     expect(failure).toBeDefined();
     expect(JSON.stringify(events)).not.toContain("quota exceeded");

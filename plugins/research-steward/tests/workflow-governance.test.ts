@@ -109,7 +109,9 @@ describe("round-table adjudication authority", () => {
 
     await runRoundtable(root, plan, "reviewer-cannot-adjudicate");
     const event = (await eventsForRun(root, "reviewer-cannot-adjudicate")).find(
-      (candidate) => candidate.metadata["node_id"] === "reviewer"
+      (candidate) =>
+        candidate.type === "agent_contribution" &&
+        candidate.metadata["node_id"] === "reviewer"
     );
 
     expect(event).toMatchObject({
@@ -152,8 +154,12 @@ describe("round-table adjudication authority", () => {
 
     const result = await runRoundtable(root, plan, "authorized-adjudication");
     const events = await eventsForRun(root, result.run_id);
-    const review = events.find((event) => event.metadata["node_id"] === "reviewer");
-    const adjudication = events.find((event) => event.metadata["node_id"] === "adjudicator");
+    const review = events.find((event) =>
+        event.type === "agent_contribution" &&
+        event.metadata["node_id"] === "reviewer");
+    const adjudication = events.find((event) =>
+        event.type === "adjudication" &&
+        event.metadata["node_id"] === "adjudicator");
 
     expect(result.completed_nodes).toEqual(["reviewer", "adjudicator"]);
     expect(adjudication).toMatchObject({
@@ -242,7 +248,9 @@ describe("round-table adjudication authority", () => {
 
     const result = await runRoundtable(root, plan, "blocked-adjudicator-run");
     const event = (await eventsForRun(root, result.run_id)).find(
-      (candidate) => candidate.metadata["node_id"] === "blocked-adjudicator"
+      (candidate) =>
+        candidate.type === "agent_contribution" &&
+        candidate.metadata["node_id"] === "blocked-adjudicator"
     );
     expect(event).toMatchObject({
       type: "agent_contribution",
@@ -279,7 +287,9 @@ describe("round-table adjudication authority", () => {
 
     const result = await runRoundtable(root, plan, "invented-adjudication-run");
     const event = (await eventsForRun(root, result.run_id)).find(
-      (candidate) => candidate.metadata["node_id"] === "inventing-adjudicator"
+      (candidate) =>
+        candidate.type === "agent_contribution" &&
+        candidate.metadata["node_id"] === "inventing-adjudicator"
     );
     expect(result.outcome).toBe("failed");
     expect(event).toMatchObject({

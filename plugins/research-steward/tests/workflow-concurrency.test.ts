@@ -93,7 +93,9 @@ describe("roundtable run lease and persisted deadline", () => {
 
     expect(runProvider).toHaveBeenCalledTimes(1);
     const nodeEvents = (await eventsForRun(root, "same-run")).filter(
-      (event) => event.metadata["node_id"] === "reviewer"
+      (event) =>
+        event.type === "agent_contribution" &&
+        event.metadata["node_id"] === "reviewer"
     );
     expect(nodeEvents).toHaveLength(1);
   });
@@ -157,7 +159,9 @@ describe("roundtable run lease and persisted deadline", () => {
 
     await expectErrorCode(run, "LOCK_LOST");
     const nodeEvents = (await eventsForRun(root, "stolen-run")).filter(
-      (event) => event.metadata["node_id"] === "reviewer"
+      (event) =>
+        event.type === "agent_contribution" &&
+        event.metadata["node_id"] === "reviewer"
     );
     expect(nodeEvents).toHaveLength(0);
   });
@@ -190,7 +194,9 @@ describe("roundtable run lease and persisted deadline", () => {
     expect(runProvider).not.toHaveBeenCalled();
     expect(
       (await eventsForRun(root, "expired-run")).find(
-        (event) => event.metadata["node_id"] === "reviewer"
+        (event) =>
+        event.type === "agent_contribution" &&
+        event.metadata["node_id"] === "reviewer"
       )
     ).toMatchObject({ status: "blocked", metadata: { blocked_by: "wall-time" } });
   });

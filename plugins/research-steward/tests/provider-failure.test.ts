@@ -91,9 +91,22 @@ describe("provider failure durability", () => {
 
     const result = await runRoundtable(root, plan, "provider-failure");
     const events = await eventsForRun(root, result.run_id);
-    const failed = events.find((event) => event.metadata["node_id"] === "reviewer-a");
-    const blockedReviewer = events.find((event) => event.metadata["node_id"] === "reviewer-b");
-    const blockedAdjudicator = events.find((event) => event.metadata["node_id"] === "adjudicator");
+    const failed = events.find(
+      (event) =>
+        event.type === "agent_contribution" && event.metadata["node_id"] === "reviewer-a"
+    );
+    const blockedReviewer = events.find(
+      (event) =>
+        event.type === "agent_contribution" &&
+        event.metadata["node_id"] === "reviewer-b" &&
+        event.status === "blocked"
+    );
+    const blockedAdjudicator = events.find(
+      (event) =>
+        event.type === "agent_contribution" &&
+        event.metadata["node_id"] === "adjudicator" &&
+        event.status === "blocked"
+    );
     const barrier = events.find((event) => event.type === "review_barrier_closed");
 
     expect(result).toMatchObject({
