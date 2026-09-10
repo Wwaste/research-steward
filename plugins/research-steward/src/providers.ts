@@ -22,6 +22,14 @@ export interface ProviderRunResult {
   stderr_hash: string;
   stderr_chars: number;
   executable_name: string;
+  /** Child pid, for invocation_started ledger events (DESIGN step 3). */
+  pid?: number;
+}
+
+export interface ProviderProcessHandle {
+  pid: number;
+  /** Process-group terminate (SIGTERM, escalate SIGKILL). */
+  terminate: (signal?: NodeJS.Signals) => void;
 }
 
 const GROK_EVIDENCE_JSON_SCHEMA = {
@@ -364,8 +372,9 @@ function runProcess(
   maximumOutput: number,
   adapter: RoundtableNode["adapter"],
   stdinText?: string,
-  signal?: AbortSignal
-): Promise<{ stdout: string; stderr: string; exitCode: number; durationMs: number }> {
+  signal?: AbortSignal,
+  onSpawn?: (handle: ProviderProcessHandle) => void
+): Promise<{ stdout: string; stderr: string; exitCode: number; durationMs: number; pid: number }> {
   return new Promise((resolve, reject) => {
     const started = Date.now();
     const detached = process.platform !== "win32";
@@ -379,6 +388,7 @@ function runProcess(
     });
     let stdout = "";
     let stderr = "";
+
     let exceeded = false;
     let timedOut = false;
     let settled = false;
@@ -400,6 +410,9 @@ function runProcess(
         // The process may already have exited.
       }
     };
+    if (child.pid !== undefined && onSpawn) {
+      onSpawn({ pid: child.pid, terminate: (sig = "SIGTERM") => terminateTree(sig) });
+    }
 
     const timer = setTimeout(() => {
       timedOut = true;
@@ -492,7 +505,8 @@ function runProcess(
         stdout: bounded(stdout, maximumOutput),
         stderr: bounded(stderr, 8_000),
         exitCode: code ?? -1,
-        durationMs: Date.now() - started
+        durationMs: Date.now() - started,
+        pid: child.pid ?? -1
       });
     });
   });
@@ -515,7 +529,7 @@ export async function runProvider(
   prompt: string,
   _projectRoot: string,
   maximumOutput: number,
-  options?: { signal?: AbortSignal }
+  options?: { signal?: AbortSignal; onProcess?: (h: ProviderProcessHandle) => void }
 ): Promise<ProviderRunResult> {
   const defaults = adapterDefaults(node);
 
@@ -627,7 +641,8 @@ export async function runProvider(
       maximumOutput,
       node.adapter,
       node.adapter === "qoder" ? prompt : undefined,
-      options?.signal
+      options?.signal,
+      options?.onProcess
     );
   } finally {
     release?.();
@@ -690,6 +705,7 @@ export async function runProvider(
     stdout_chars: result.stdout.length,
     stderr_hash: sha256Text(result.stderr),
     stderr_chars: result.stderr.length,
-    executable_name: path.basename(executable)
+    executable_name: path.basename(executable),
+    pid: result.pid
   };
 }

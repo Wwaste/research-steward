@@ -60145,7 +60145,7 @@ function normalizeModelOutput(value) {
   }
   return record2;
 }
-function runProcess(executable, args, cwd, timeoutMs, maximumOutput, adapter, stdinText, signal) {
+function runProcess(executable, args, cwd, timeoutMs, maximumOutput, adapter, stdinText, signal, onSpawn) {
   return new Promise((resolve, reject) => {
     const started = Date.now();
     const detached = process.platform !== "win32";
@@ -60177,6 +60177,9 @@ function runProcess(executable, args, cwd, timeoutMs, maximumOutput, adapter, st
       } catch {
       }
     };
+    if (child.pid !== void 0 && onSpawn) {
+      onSpawn({ pid: child.pid, terminate: (sig = "SIGTERM") => terminateTree(sig) });
+    }
     const timer = setTimeout(() => {
       timedOut = true;
       terminateTree("SIGTERM");
@@ -60266,7 +60269,8 @@ function runProcess(executable, args, cwd, timeoutMs, maximumOutput, adapter, st
         stdout: bounded(stdout, maximumOutput),
         stderr: bounded(stderr, 8e3),
         exitCode: code ?? -1,
-        durationMs: Date.now() - started
+        durationMs: Date.now() - started,
+        pid: child.pid ?? -1
       });
     });
   });
@@ -60377,7 +60381,8 @@ async function runProvider(node2, prompt, _projectRoot, maximumOutput, options) 
       maximumOutput,
       node2.adapter,
       node2.adapter === "qoder" ? prompt : void 0,
-      options?.signal
+      options?.signal,
+      options?.onProcess
     );
   } finally {
     release?.();
@@ -60435,7 +60440,8 @@ async function runProvider(node2, prompt, _projectRoot, maximumOutput, options) 
     stdout_chars: result.stdout.length,
     stderr_hash: sha256Text(result.stderr),
     stderr_chars: result.stderr.length,
-    executable_name: path5.basename(executable)
+    executable_name: path5.basename(executable),
+    pid: result.pid
   };
 }
 
