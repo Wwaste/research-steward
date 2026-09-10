@@ -191,6 +191,15 @@ export async function readEventsWithIndex(root: string): Promise<CommittedEvent[
     ) {
       throw staleIndexError(`checkpoint at sequence ${checkpoint.sequence} does not match the ledger`);
     }
+    // When present, file_name is part of the location identity (CR-M-039).
+    if (checkpoint.file_name !== undefined) {
+      const expectedName = `${String(event.sequence).padStart(8, "0")}-${event.event_id}.json`;
+      if (checkpoint.file_name !== expectedName) {
+        throw staleIndexError(
+          `checkpoint file_name at sequence ${checkpoint.sequence} does not match the event file`
+        );
+      }
+    }
   }
   return events;
 }

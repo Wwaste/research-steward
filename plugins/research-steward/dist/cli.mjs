@@ -72955,8 +72955,8 @@ function checkModelRoute(env) {
   }
   return {
     id: "route.model",
-    status: "pass",
-    summary: "RESEARCH_STEWARD_MODEL is set and does not look like a placeholder."
+    status: "skipped",
+    summary: "RESEARCH_STEWARD_MODEL is set; compatibility with provider catalogs is not verified from env alone."
   };
 }
 function aggregateOverall(checks) {
@@ -73008,7 +73008,16 @@ var BUILT_IN_SKILL_IDS = Object.freeze([
   "project-workspace",
   "research-shared",
   "research-steward",
-  "roundtable-collaboration"
+  "roundtable-collaboration",
+  "bias-validity-audit",
+  "citation-integrity",
+  "claim-evidence-audit",
+  "data-provenance-audit",
+  "reproducibility-audit",
+  "research-contract",
+  "research-question-audit",
+  "reporting-guidelines",
+  "statistics-audit"
 ]);
 var quickReview = {
   preset_id: "quick-review",
@@ -73451,7 +73460,8 @@ var ProviderRouteSchema = external_exports.object({
   route: external_exports.enum(["subscription_cli", "fake"])
 }).strict();
 var WorkflowLockSchema = external_exports.object({
-  lock_version: external_exports.literal(1),
+  // v2 adds limits_fingerprint and skill_fingerprints (CR-M-043).
+  lock_version: external_exports.literal(2),
   created_at: external_exports.string().datetime({ offset: true }),
   plan_hash: HashSchema2,
   preset_id: external_exports.string().min(1).max(64),
@@ -73588,7 +73598,7 @@ function buildPlan(input2) {
     }
   }
   const lock = WorkflowLockSchema.parse({
-    lock_version: 1,
+    lock_version: 2,
     created_at: (/* @__PURE__ */ new Date()).toISOString(),
     plan_hash: sha256Text(stableJson(plan)),
     preset_id: preset.preset_id,

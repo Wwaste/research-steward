@@ -541,10 +541,12 @@ function checkModelRoute(env: Readonly<Record<string, string | undefined>>): Doc
       remediation: "Set RESEARCH_STEWARD_MODEL to a real model identifier your subscription CLI accepts."
     };
   }
+  // A non-placeholder env name is not independently verified against a
+  // provider catalog — that requires plan/lock input (CR-M-038/041).
   return {
     id: "route.model",
-    status: "pass",
-    summary: "RESEARCH_STEWARD_MODEL is set and does not look like a placeholder."
+    status: "skipped",
+    summary: "RESEARCH_STEWARD_MODEL is set; compatibility with provider catalogs is not verified from env alone."
   };
 }
 

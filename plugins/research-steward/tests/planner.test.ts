@@ -165,7 +165,7 @@ describe("buildPlan", () => {
       assertStructuralInvariants(plan);
 
       expect(WorkflowLockSchema.parse(lock)).toEqual(lock);
-      expect(lock.lock_version).toBe(1);
+      expect(lock.lock_version).toBe(2);
       expect(lock.preset_id).toBe(id);
       expect(lock.preset_version).toBe("1.0.0");
       expect(lock.generator_version).toBe("planner/0.2.0");
@@ -455,7 +455,7 @@ describe("workflow lock", () => {
     expect(raw.type).toBe("object");
     expect(raw.additionalProperties).toBe(false);
     expect([...raw.required].sort()).toEqual(Object.keys(WorkflowLockSchema.shape).sort());
-    expect(raw.properties.lock_version.const).toBe(1);
+    expect(raw.properties.lock_version.const).toBe(2);
     expect(raw.properties.generator_version.const).toBe("planner/0.2.0");
     const routeSchema = raw.properties.provider_routes.additionalProperties;
     expect([...routeSchema.properties.adapter.enum].sort()).toEqual([

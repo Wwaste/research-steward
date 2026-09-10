@@ -50,7 +50,8 @@ export const ProviderRouteSchema = z
 
 export const WorkflowLockSchema = z
   .object({
-    lock_version: z.literal(1),
+    // v2 adds limits_fingerprint and skill_fingerprints (CR-M-043).
+    lock_version: z.literal(2),
     created_at: z.string().datetime({ offset: true }),
     plan_hash: HashSchema,
     preset_id: z.string().min(1).max(64),
@@ -244,7 +245,7 @@ export function buildPlan(input: BuildPlanInput): { plan: RoundtablePlan; lock: 
   }
 
   const lock = WorkflowLockSchema.parse({
-    lock_version: 1,
+    lock_version: 2,
     created_at: new Date().toISOString(),
     plan_hash: sha256Text(stableJson(plan)),
     preset_id: preset.preset_id,

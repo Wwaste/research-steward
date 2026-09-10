@@ -67,7 +67,16 @@ export const BUILT_IN_SKILL_IDS: readonly string[] = Object.freeze([
   "project-workspace",
   "research-shared",
   "research-steward",
-  "roundtable-collaboration"
+  "roundtable-collaboration",
+  "bias-validity-audit",
+  "citation-integrity",
+  "claim-evidence-audit",
+  "data-provenance-audit",
+  "reproducibility-audit",
+  "research-contract",
+  "research-question-audit",
+  "reporting-guidelines",
+  "statistics-audit"
 ]);
 
 const quickReview: RoundtablePreset = {
