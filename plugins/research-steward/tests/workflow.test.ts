@@ -155,8 +155,14 @@ describe("round-table DAG", () => {
 
     const result = await runRoundtable(root, plan, "dag-a-to-b");
     const events = await eventsForRun(root, result.run_id);
-    const a = events.find((event) => event.metadata["node_id"] === "producer");
-    const b = events.find((event) => event.metadata["node_id"] === "reviewer");
+    const a = events.find(
+      (event) =>
+        event.type === "agent_contribution" && event.metadata["node_id"] === "producer"
+    );
+    const b = events.find(
+      (event) =>
+        event.type === "agent_contribution" && event.metadata["node_id"] === "reviewer"
+    );
 
     expect(result.completed_nodes).toEqual(["producer", "reviewer"]);
     expect(a).toBeDefined();

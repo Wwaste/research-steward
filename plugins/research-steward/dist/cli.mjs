@@ -60552,6 +60552,85 @@ function makeInvocationId(run_id, node_id, attempt) {
 ${node_id}
 ${attempt}`, "utf8").digest("hex").slice(0, 32);
 }
+function metadataOf(event) {
+  return event.metadata ?? {};
+}
+function strField(meta3, key) {
+  const value = meta3[key];
+  return typeof value === "string" ? value : void 0;
+}
+function foldInvocations(events) {
+  const map2 = /* @__PURE__ */ new Map();
+  for (const event of events) {
+    const meta3 = metadataOf(event);
+    const id = strField(meta3, "invocation_id");
+    if (id === void 0) continue;
+    const existing = map2.get(id);
+    switch (event.type) {
+      case "invocation_started": {
+        map2.set(
+          id,
+          InvocationSnapshotSchema.parse({
+            invocation_id: id,
+            run_id: strField(meta3, "run_id") ?? event.run_id ?? "run",
+            node_id: strField(meta3, "node_id") ?? "node",
+            attempt: typeof meta3["attempt"] === "number" ? meta3["attempt"] : 1,
+            adapter: strField(meta3, "adapter") ?? "unknown",
+            model: strField(meta3, "model"),
+            state: "started",
+            failure_class: null,
+            stdout_sha256: null,
+            replay_authorized: false,
+            prior_state: null
+          })
+        );
+        break;
+      }
+      case "invocation_finished": {
+        if (!existing) break;
+        const status = strField(meta3, "status") === "ok" ? "ok" : "failed";
+        map2.set(id, {
+          ...existing,
+          state: status === "ok" ? "finished_ok" : "finished_failed",
+          failure_class: status === "ok" ? null : FailureClassSchema.parse(strField(meta3, "failure_class") ?? "unknown"),
+          stdout_sha256: strField(meta3, "stdout_sha256") ?? null
+        });
+        break;
+      }
+      case "invocation_cancel_requested": {
+        if (!existing || existing.state !== "started") break;
+        map2.set(id, { ...existing, state: "cancel_requested" });
+        break;
+      }
+      case "invocation_cancelled": {
+        if (!existing) break;
+        if (existing.state === "finished_ok" || existing.state === "finished_failed") break;
+        map2.set(id, { ...existing, state: "cancelled", failure_class: "cancelled" });
+        break;
+      }
+      case "invocation_unknown": {
+        if (!existing) break;
+        if (existing.state === "finished_ok" || existing.state === "finished_failed" || existing.state === "cancelled") {
+          break;
+        }
+        map2.set(id, {
+          ...existing,
+          state: "unknown",
+          prior_state: existing.state
+        });
+        break;
+      }
+      case "invocation_replay_authorized": {
+        if (!existing || existing.state !== "unknown") break;
+        map2.set(id, { ...existing, replay_authorized: true });
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  return map2;
+}
 
 // src/workflow.ts
 var RUN_LEASE_STALE_MS = 3e4;
@@ -60938,9 +61017,55 @@ async function runOneNode(root, plan, runId, node2, packetBundle, packetHash, co
       timeout_ms: Math.min(node2.timeout_ms, remainingMs)
     };
     attempts += 1;
+    const invocationId = makeInvocationId(runId, node2.id, attempts);
+    await appendCoordinatorEvent(root, assertCoordinatorOwned, {
+      type: "invocation_started",
+      run_id: runId,
+      actor: {
+        id: node2.actor_id,
+        role: node2.role,
+        adapter: node2.adapter,
+        ...node2.model ? { model: node2.model } : {}
+      },
+      input_hash: packetHash,
+      depends_on: dependencyEvents.map((event) => event.event_id),
+      // Process metadata is never blind scientific content.
+      visibility: "shared",
+      summary: `Invocation started for ${node2.id} attempt ${attempts}.`,
+      metadata: {
+        invocation_id: invocationId,
+        run_id: runId,
+        node_id: node2.id,
+        attempt: attempts,
+        adapter: node2.adapter,
+        ...node2.model ? { model: node2.model } : {},
+        retry_reason: lastRetryDecision?.reason ?? null
+      }
+    });
     let result;
+    let processPid;
     try {
-      result = await runProvider(effectiveNode, prompt, root, plan.limits.max_output_chars);
+      result = await runProvider(effectiveNode, prompt, root, plan.limits.max_output_chars, {
+        onProcess: (handle) => {
+          processPid = handle.pid;
+        }
+      });
+      await appendCoordinatorEvent(root, assertCoordinatorOwned, {
+        type: "invocation_finished",
+        run_id: runId,
+        actor: { id: node2.actor_id, role: node2.role },
+        input_hash: packetHash,
+        visibility: "shared",
+        summary: `Invocation finished ok for ${node2.id} attempt ${attempts}.`,
+        metadata: {
+          invocation_id: invocationId,
+          status: "ok",
+          failure_class: null,
+          stdout_sha256: result.stdout_hash,
+          duration_ms: result.duration_ms,
+          pid: processPid ?? result.pid
+        }
+      });
     } catch (error61) {
       lastError = error61;
       const failureClass = error61 instanceof ResearchStewardError && typeof error61.details["failure_class"] === "string" ? error61.details["failure_class"] : "unknown";
@@ -60948,9 +61073,25 @@ async function runOneNode(root, plan, runId, node2, packetBundle, packetHash, co
       const decision = decideRetry(failureClass, attempts, policy);
       lastRetryDecision = { reason: decision.reason, backoff_ms: decision.backoff_ms };
       const errorDetails = error61 instanceof ResearchStewardError ? error61.details : {};
+      await appendCoordinatorEvent(root, assertCoordinatorOwned, {
+        type: "invocation_finished",
+        run_id: runId,
+        actor: { id: node2.actor_id, role: node2.role },
+        input_hash: packetHash,
+        visibility: "shared",
+        summary: `Invocation failed for ${node2.id} attempt ${attempts}: ${failureClass}.`,
+        metadata: {
+          invocation_id: invocationId,
+          status: "failed",
+          failure_class: failureClass,
+          duration_ms: errorDetails["duration_ms"] ?? 0,
+          stderr_hash: errorDetails["stderr_hash"],
+          pid: processPid
+        }
+      });
       attemptEvidence.push({
         attempt: attempts,
-        invocation_id: makeInvocationId(runId, node2.id, attempts),
+        invocation_id: invocationId,
         failure_class: failureClass,
         retry: decision.retry,
         retry_reason: decision.reason,
@@ -61105,6 +61246,26 @@ async function runRoundtable(root, rawPlan, requestedRunId) {
 `);
     }
     let events = await readEvents(root);
+    const invocationFold = foldInvocations(
+      events.filter((event) => event.run_id === runId)
+    );
+    for (const snap of invocationFold.values()) {
+      if (snap.state === "started" || snap.state === "cancel_requested") {
+        await appendCoordinatorEvent(root, assertCoordinatorOwned, {
+          type: "invocation_unknown",
+          run_id: runId,
+          actor: { id: "research-steward", role: "coordinator" },
+          visibility: "shared",
+          summary: `Marking invocation ${snap.invocation_id} unknown after resume.`,
+          metadata: {
+            invocation_id: snap.invocation_id,
+            marked_at_resume: true,
+            prior_state: snap.state
+          }
+        });
+      }
+    }
+    events = await readEvents(root);
     let runStarts = events.filter(
       (event) => event.run_id === runId && event.type === "run_started"
     );

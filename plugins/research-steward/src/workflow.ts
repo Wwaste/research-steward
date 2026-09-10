@@ -23,7 +23,7 @@ import {
   ensurePrivateDirectoryInside,
   resolvePrivateDestinationInside
 } from "./paths.js";
-import { makeInvocationId } from "./invocations.js";
+import { foldInvocations, makeInvocationId } from "./invocations.js";
 import {
   ResearchStewardError,
   atomicWriteFile,
@@ -517,9 +517,56 @@ async function runOneNode(
       timeout_ms: Math.min(node.timeout_ms, remainingMs)
     };
     attempts += 1;
+    const invocationId = makeInvocationId(runId, node.id, attempts);
+    // persist-before-spawn (DESIGN-INVOCATION-LEDGER step 4)
+    await appendCoordinatorEvent(root, assertCoordinatorOwned, {
+      type: "invocation_started",
+      run_id: runId,
+      actor: {
+        id: node.actor_id,
+        role: node.role,
+        adapter: node.adapter,
+        ...(node.model ? { model: node.model } : {})
+      },
+      input_hash: packetHash,
+      depends_on: dependencyEvents.map((event) => event.event_id),
+      // Process metadata is never blind scientific content.
+      visibility: "shared",
+      summary: `Invocation started for ${node.id} attempt ${attempts}.`,
+      metadata: {
+        invocation_id: invocationId,
+        run_id: runId,
+        node_id: node.id,
+        attempt: attempts,
+        adapter: node.adapter,
+        ...(node.model ? { model: node.model } : {}),
+        retry_reason: lastRetryDecision?.reason ?? null
+      }
+    });
     let result: Awaited<ReturnType<typeof runProvider>>;
+    let processPid: number | undefined;
     try {
-      result = await runProvider(effectiveNode, prompt, root, plan.limits.max_output_chars);
+      result = await runProvider(effectiveNode, prompt, root, plan.limits.max_output_chars, {
+        onProcess: (handle) => {
+          processPid = handle.pid;
+        }
+      });
+      await appendCoordinatorEvent(root, assertCoordinatorOwned, {
+        type: "invocation_finished",
+        run_id: runId,
+        actor: { id: node.actor_id, role: node.role },
+        input_hash: packetHash,
+        visibility: "shared",
+        summary: `Invocation finished ok for ${node.id} attempt ${attempts}.`,
+        metadata: {
+          invocation_id: invocationId,
+          status: "ok",
+          failure_class: null,
+          stdout_sha256: result.stdout_hash,
+          duration_ms: result.duration_ms,
+          pid: processPid ?? result.pid
+        }
+      });
     } catch (error) {
       lastError = error;
       // Typed retry policy (RS-V1-SUP-018).
@@ -533,9 +580,25 @@ async function runOneNode(
       lastRetryDecision = { reason: decision.reason, backoff_ms: decision.backoff_ms };
       const errorDetails =
         error instanceof ResearchStewardError ? error.details : {};
+      await appendCoordinatorEvent(root, assertCoordinatorOwned, {
+        type: "invocation_finished",
+        run_id: runId,
+        actor: { id: node.actor_id, role: node.role },
+        input_hash: packetHash,
+        visibility: "shared",
+        summary: `Invocation failed for ${node.id} attempt ${attempts}: ${failureClass}.`,
+        metadata: {
+          invocation_id: invocationId,
+          status: "failed",
+          failure_class: failureClass,
+          duration_ms: errorDetails["duration_ms"] ?? 0,
+          stderr_hash: errorDetails["stderr_hash"],
+          pid: processPid
+        }
+      });
       attemptEvidence.push({
         attempt: attempts,
-        invocation_id: makeInvocationId(runId, node.id, attempts),
+        invocation_id: invocationId,
         failure_class: failureClass,
         retry: decision.retry,
         retry_reason: decision.reason,
@@ -713,6 +776,27 @@ export async function runRoundtable(
     }
 
     let events = await readEvents(root);
+    // Resume safety: started/cancel_requested without terminal → unknown.
+    const invocationFold = foldInvocations(
+      events.filter((event) => event.run_id === runId)
+    );
+    for (const snap of invocationFold.values()) {
+      if (snap.state === "started" || snap.state === "cancel_requested") {
+        await appendCoordinatorEvent(root, assertCoordinatorOwned, {
+          type: "invocation_unknown",
+          run_id: runId,
+          actor: { id: "research-steward", role: "coordinator" },
+          visibility: "shared",
+          summary: `Marking invocation ${snap.invocation_id} unknown after resume.`,
+          metadata: {
+            invocation_id: snap.invocation_id,
+            marked_at_resume: true,
+            prior_state: snap.state
+          }
+        });
+      }
+    }
+    events = await readEvents(root);
     let runStarts = events.filter(
       (event) => event.run_id === runId && event.type === "run_started"
     );
