@@ -72654,7 +72654,7 @@ var PUBLIC_SCHEMA_FILES = [
   "research-event.schema.json",
   "roundtable-plan.schema.json"
 ];
-var MINIMUM_SKILL_DIRECTORIES = 8;
+var MINIMUM_SKILL_DIRECTORIES = 16;
 var EXPECTED_MCP_TOOLS = [
   "research_init_project",
   "research_freeze_packet",

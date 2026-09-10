@@ -39,7 +39,7 @@ async function pluginFixture(): Promise<string> {
   for (const name of SCHEMA_FILES) {
     await writeFile(path.join(root, "schemas", name), JSON.stringify({ title: name }));
   }
-  for (let index = 0; index < 8; index += 1) {
+  for (let index = 0; index < 16; index += 1) {
     const skill = path.join(root, "skills", `skill-${index}`);
     await mkdir(skill, { recursive: true });
     await writeFile(path.join(skill, "SKILL.md"), `# Skill ${index}\n`);
@@ -117,7 +117,7 @@ describe("doctor report", () => {
       expect(check(report, id).status, id).toBe("pass");
     }
     expect(check(report, "http.token").status).toBe("skipped");
-    expect(check(report, "skills.inventory").summary).toContain("8");
+    expect(check(report, "skills.inventory").summary).toContain("16");
   });
 
   it("reports provider basename only and never invokes an auth probe", async () => {
@@ -355,9 +355,9 @@ describe("doctor report", () => {
     expect(sixteen.overall).toBe("fail");
   });
 
-  it("fails skills.inventory when fewer than eight skills carry SKILL.md", async () => {
+  it("fails skills.inventory when fewer than sixteen skills carry SKILL.md", async () => {
     const pluginRoot = await pluginFixture();
-    await rm(path.join(pluginRoot, "skills", "skill-7"), { recursive: true });
+    await rm(path.join(pluginRoot, "skills", "skill-15"), { recursive: true });
 
     const report = await runDoctor({
       nodeVersion: "v22.4.0",
@@ -368,7 +368,7 @@ describe("doctor report", () => {
 
     const skills = check(report, "skills.inventory");
     expect(skills.status).toBe("fail");
-    expect(skills.summary).toContain("7");
+    expect(skills.summary).toContain("15");
   });
 });
 

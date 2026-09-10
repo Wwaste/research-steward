@@ -181,6 +181,12 @@ describe("redact on Windows path shapes", () => {
     expect(redact(forwardUnc)).not.toContain("bob");
   });
 
+  it("pins over-redaction of escaped non-home Windows paths (CR-M-013)", () => {
+    // Fail-safe direction: we may hide more than a home path, never less.
+    expect(redact("C:\\\\Windows\\\\System32\\\\drivers")).not.toContain("Windows");
+    expect(redact("C:\\\\Users\\\\Alice")).not.toContain("Alice");
+  });
+
   it("keeps Windows home paths out of the snapshot, the jsonl line, and the OTLP export", async () => {
     const directory = await temporaryDirectory();
     const recorder = new TelemetryRecorder({ directory });

@@ -51,7 +51,7 @@ const PUBLIC_SCHEMA_FILES = [
   "roundtable-plan.schema.json"
 ] as const;
 
-const MINIMUM_SKILL_DIRECTORIES = 8;
+const MINIMUM_SKILL_DIRECTORIES = 16;
 
 /**
  * MCP tools the plugin is expected to register. Kept in sync with
