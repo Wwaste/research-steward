@@ -79,9 +79,11 @@ export function summarizeForFirstScreen(model: ControlPlaneReadModel): {
   };
 }
 
+export type AttentionKind = "decision" | "blocker" | "verification" | "delivery" | "other";
+
 export function filterAttention(
   model: ControlPlaneReadModel,
-  kinds: readonly Array<"decision" | "blocker" | "verification" | "delivery" | "other">
+  kinds: readonly AttentionKind[]
 ): ControlPlaneReadModel["attention"] {
   const set = new Set(kinds);
   return model.attention.filter((item) => set.has(item.kind));
