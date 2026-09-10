@@ -1,13 +1,18 @@
-import { createHash } from "node:crypto";
-import { lstat, open, readFile, rm } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { lstat, open, readFile, rename, rm } from "node:fs/promises";
 import { isMap, isScalar, parseDocument, type Document, type YAMLMap, isSeq } from "yaml";
 import { resolveExistingInside } from "./paths.js";
 import { readEvents, unresolvedBlockedEvents } from "./store.js";
 import type { CommittedEvent } from "./protocol.js";
 import { ResearchStewardError, atomicWriteFile, errorMessage } from "./utils.js";
 
-/** A lock older than this is treated as crash residue and reclaimed. */
+/**
+ * Locks older than this are treated as crash residue. 30s covers a full
+ * ledger scan on a medium project; operations longer than this must rely on
+ * the live heartbeat or re-acquire (we do not extend the lock automatically).
+ */
 const ACCEPTANCE_LOCK_STALE_MS = 30_000;
+const ACCEPTANCE_LOCK_ATTEMPTS = 3;
 
 export interface PrepareAcceptanceOptions {
   approvalId?: string;
@@ -37,55 +42,91 @@ function sha256Bytes(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+async function readLockToken(lockPath: string): Promise<string | null> {
+  try {
+    const raw = await readFile(lockPath, "utf8");
+    const parsed = JSON.parse(raw) as { token?: unknown };
+    return typeof parsed.token === "string" ? parsed.token : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Exclusive O_EXCL lock covering the whole read-check-write of ACCEPTANCE.yaml.
- * Without it, two prepareAcceptance calls (or a human editor racing the
- * residual CAS window) can interleave renames and lose accepts updates.
+ * The lock file carries a random token so release only deletes our lock and
+ * stale reclaim only deletes a lock that is still the same stale one (CR-M-033).
  */
 async function acquireAcceptanceLock(
   acceptancePath: string
 ): Promise<{ release: () => Promise<void> }> {
   const lockPath = `${acceptancePath}.lock`;
-  try {
-    const handle = await open(lockPath, "wx", 0o600);
+  for (let attempt = 0; attempt < ACCEPTANCE_LOCK_ATTEMPTS; attempt += 1) {
+    const token = randomUUID();
     try {
-      await handle.writeFile(
-        `${JSON.stringify({ pid: process.pid, at: new Date().toISOString() })}\n`
-      );
-    } finally {
-      await handle.close();
-    }
-    return {
-      release: async () => {
-        await rm(lockPath, { force: true });
+      const handle = await open(lockPath, "wx", 0o600);
+      try {
+        await handle.writeFile(
+          `${JSON.stringify({
+            token,
+            pid: process.pid,
+            at: new Date().toISOString()
+          })}\n`
+        );
+      } finally {
+        await handle.close();
       }
-    };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      return {
+        release: async () => {
+          const current = await readLockToken(lockPath);
+          if (current === token) {
+            await rm(lockPath, { force: true });
+          }
+        }
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw new ResearchStewardError(
+          "ACCEPTANCE_LOCK_FAILED",
+          `Could not create the acceptance lock: ${errorMessage(error)}`
+        );
+      }
+      let stale = false;
+      try {
+        const info = await lstat(lockPath);
+        stale = Date.now() - info.mtimeMs > ACCEPTANCE_LOCK_STALE_MS;
+      } catch (statError) {
+        if ((statError as NodeJS.ErrnoException).code !== "ENOENT") throw statError;
+        continue; // vanished; retry create
+      }
+      if (stale) {
+        // Reclaim: rename aside, confirm it is still that stale lock, then drop.
+        const quarantine = `${lockPath}.stale-${randomUUID()}`;
+        try {
+          await rename(lockPath, quarantine);
+          const stillOurs = (await lstat(quarantine)).mtimeMs;
+          if (Date.now() - stillOurs > ACCEPTANCE_LOCK_STALE_MS) {
+            await rm(quarantine, { force: true });
+          } else {
+            // Someone recreated quickly; put ours back if lock path is free.
+            await rename(quarantine, lockPath).catch(() => undefined);
+          }
+        } catch {
+          // Lost the reclaim race; loop and try create again.
+        }
+        continue;
+      }
       throw new ResearchStewardError(
-        "ACCEPTANCE_LOCK_FAILED",
-        `Could not create the acceptance lock: ${errorMessage(error)}`
+        "ACCEPTANCE_LOCKED",
+        "Another prepareAcceptance is already reading or writing ACCEPTANCE.yaml. " +
+          "Wait for it to finish, or remove a stale .lock file after confirming no writer is live."
       );
     }
-    let stale = false;
-    try {
-      const info = await lstat(lockPath);
-      stale = Date.now() - info.mtimeMs > ACCEPTANCE_LOCK_STALE_MS;
-    } catch (statError) {
-      if ((statError as NodeJS.ErrnoException).code !== "ENOENT") throw statError;
-      // Lock vanished between open and lstat; treat as free and retry once.
-      return acquireAcceptanceLock(acceptancePath);
-    }
-    if (stale) {
-      await rm(lockPath, { force: true }).catch(() => undefined);
-      return acquireAcceptanceLock(acceptancePath);
-    }
-    throw new ResearchStewardError(
-      "ACCEPTANCE_LOCKED",
-      "Another prepareAcceptance is already reading or writing ACCEPTANCE.yaml. " +
-        "Wait for it to finish, or remove a stale .lock file after confirming no writer is live."
-    );
   }
+  throw new ResearchStewardError(
+    "ACCEPTANCE_LOCKED",
+    `Could not acquire the acceptance lock after ${ACCEPTANCE_LOCK_ATTEMPTS} attempts.`
+  );
 }
 
 function approvalIdOf(approval: YAMLMap): string {

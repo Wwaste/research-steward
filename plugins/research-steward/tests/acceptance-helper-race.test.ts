@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parse as parseYaml } from "yaml";
@@ -241,4 +241,22 @@ human_approvals:
       "ACCEPTANCE_DOCUMENT_CHANGED"
     );
   });
+});
+
+describe("acceptance lock ownership (CR-M-033)", () => {
+  it("release does not delete another helper's lock (CR-M-033)", async () => {
+    const { root } = await verifiedProject();
+    const lockPath = path.join(root, "ACCEPTANCE.yaml.lock");
+    // Simulate a foreign lock that appeared after our would-be release window.
+    await writeFile(
+      lockPath,
+      JSON.stringify({ token: "foreign-token", pid: 1, at: new Date().toISOString() }) + "\n",
+      "utf8"
+    );
+    const result = await prepareAcceptance(root, {}).catch((e: unknown) => e);
+    expect(result).toMatchObject({ code: "ACCEPTANCE_LOCKED" });
+    // Foreign lock still present.
+    expect(await readFile(lockPath, "utf8")).toContain("foreign-token");
+  });
+
 });
