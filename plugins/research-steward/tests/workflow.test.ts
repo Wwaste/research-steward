@@ -43,7 +43,8 @@ describe("round-table DAG", () => {
     const result = await runRoundtable(root, plan, "walkthrough-plan");
     const events = await eventsForRun(root, result.run_id);
     const adjudication = events.find(
-      (event) => event.metadata["node_id"] === "adjudicator"
+      (event) =>
+        event.type === "adjudication" && event.metadata["node_id"] === "adjudicator"
     );
     expect(result.outcome).toBe("complete");
     expect(adjudication).toMatchObject({
