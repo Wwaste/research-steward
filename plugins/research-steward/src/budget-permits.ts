@@ -141,7 +141,8 @@ export function countPaidInvocationsInWindow(
     if (event.type !== "invocation_started") continue;
     const adapter = event.metadata["adapter"];
     if (typeof adapter !== "string" || !paidAdapters.includes(adapter)) continue;
-    if (Date.parse(event.created_at) >= start) n += 1;
+    const created = (event as { created_at?: string }).created_at;
+    if (typeof created === "string" && Date.parse(created) >= start) n += 1;
   }
   return n;
 }
