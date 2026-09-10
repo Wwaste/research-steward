@@ -3,7 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { DoctorReportSchema, runDoctor, EXPECTED_MCP_TOOLS, type DoctorReport } from "../src/doctor.js";
+import {
+  DoctorReportSchema,
+  runDoctor,
+  EXPECTED_MCP_TOOLS,
+  checkModelRouteFromPlan,
+  type DoctorReport
+} from "../src/doctor.js";
 
 const disposableRoots = new Set<string>();
 const restoreWritable = new Set<string>();
@@ -533,3 +539,20 @@ describe("doctor fix round 1", () => {
     }
     expect(entries.length).toBeGreaterThanOrEqual(6);
   });
+
+describe("model-route from plan (CR-M-038)", () => {
+  it("flags adapter/model vendor mismatch", () => {
+    const check = checkModelRouteFromPlan({
+      nodes: [{ adapter: "kimi", model: "grok-beta" }]
+    });
+    expect(check.status).toBe("fail");
+    expect(check.summary).not.toContain("grok-beta");
+  });
+
+  it("passes consistent pairs and skips without plan", () => {
+    expect(
+      checkModelRouteFromPlan({ nodes: [{ adapter: "kimi", model: "kimi-latest" }] }).status
+    ).toBe("pass");
+    expect(checkModelRouteFromPlan(undefined).status).toBe("skipped");
+  });
+});

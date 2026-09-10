@@ -546,6 +546,71 @@ function checkRootPolicy(env: Readonly<Record<string, string | undefined>>): Doc
 
 const PLACEHOLDER_MODEL = /replace|your-model|example-model|changeme|todo-model/i;
 
+/**
+ * Static adapter+model compatibility from a plan/lock (CR-M-038). Used when
+ * the caller supplies plan or lock JSON; env-only checks stay weaker.
+ */
+export function checkModelRouteFromPlan(plan: unknown): DoctorCheck {
+  const nodes =
+    plan !== null && typeof plan === "object"
+      ? (plan as { nodes?: unknown }).nodes
+      : undefined;
+  if (!Array.isArray(nodes)) {
+    return {
+      id: "route.model",
+      status: "skipped",
+      summary: "No plan nodes supplied; adapter/model cross-check skipped."
+    };
+  }
+  const issues: string[] = [];
+  for (const node of nodes) {
+    if (node === null || typeof node !== "object") continue;
+    const adapter = (node as { adapter?: unknown }).adapter;
+    const model = (node as { model?: unknown }).model;
+    if (typeof adapter !== "string" || typeof model !== "string" || model === "") continue;
+    if (PLACEHOLDER_MODEL.test(model)) {
+      issues.push(`node uses a placeholder model name`);
+      continue;
+    }
+    // Heuristic: a model string naming a different vendor CLI is a likely mismatch.
+    const modelVendor = /gpt|o1|claude|sonnet|haiku|deepseek|gemini|grok|kimi|qoder/i.exec(
+      model
+    );
+    if (modelVendor === null) continue;
+    const vendor = modelVendor[0]!.toLowerCase();
+    const adapterVendor =
+      adapter === "kimi"
+        ? "kimi"
+        : adapter === "grok"
+          ? "grok"
+          : adapter === "qoder"
+            ? "qoder"
+            : adapter === "fake"
+              ? null
+              : null;
+    if (adapterVendor !== null && !vendor.includes(adapterVendor) && adapterVendor !== "qoder") {
+      // grok adapter + kimi model name etc.
+      if ((adapterVendor === "grok" && !vendor.includes("grok")) ||
+          (adapterVendor === "kimi" && !vendor.includes("kimi"))) {
+        issues.push(`adapter/model vendor mismatch`);
+      }
+    }
+  }
+  if (issues.length > 0) {
+    return {
+      id: "route.model",
+      status: "fail",
+      summary: `Plan model-route check found ${issues.length} issue(s) (details withheld).`,
+      remediation: "Align each node model with its adapter, or use the fake adapter for rehearsal."
+    };
+  }
+  return {
+    id: "route.model",
+    status: "pass",
+    summary: "Plan adapter/model pairs look consistent (static heuristic)."
+  };
+}
+
 function checkModelRoute(env: Readonly<Record<string, string | undefined>>): DoctorCheck {
   const model = env["RESEARCH_STEWARD_MODEL"] ?? env["RESEARCH_STEWARD_DEFAULT_MODEL"];
   if (model === undefined || model.trim() === "") {

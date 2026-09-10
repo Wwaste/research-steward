@@ -55,7 +55,9 @@ const ProviderForecastSchema = z
     // widest-layer occupancy — after one layer's head finishes, nodes from
     // later layers plus leftovers can run together (RS-V1-SUP-009 / CR-M-035).
     max_parallel_width: z.number().int().min(1),
-    route: z.enum(["subscription_cli", "fake"])
+    // Four routes are representable so metered/unknown appear structured with
+    // a blocking warning instead of throwing UNREPRESENTABLE_ROUTE (CR-M-040).
+    route: z.enum(["subscription_cli", "metered_api", "fake", "unknown"])
   })
   .strict();
 
@@ -131,13 +133,8 @@ export function routeWarning(
  * this fails loudly so ForecastSchema gets extended deliberately instead of
  * mislabeling the new route.
  */
-function representableRoute(adapter: string): "subscription_cli" | "fake" {
-  const route = classifyRoute(adapter);
-  if (route === "subscription_cli" || route === "fake") return route;
-  throw new ResearchStewardError(
-    "UNREPRESENTABLE_ROUTE",
-    `Adapter "${adapter}" classifies as "${route}", which the per_provider table cannot represent yet.`
-  );
+function representableRoute(adapter: string): "subscription_cli" | "metered_api" | "fake" | "unknown" {
+  return classifyRoute(adapter);
 }
 
 /**
@@ -209,7 +206,7 @@ export function buildForecast(rawPlan: unknown): Forecast {
       nodes: number;
       worst_case_invocations: number;
       max_parallel_width: number;
-      route: "subscription_cli" | "fake";
+      route: "subscription_cli" | "metered_api" | "fake" | "unknown";
     }
   > = {};
   const warnings: ForecastWarning[] = [];

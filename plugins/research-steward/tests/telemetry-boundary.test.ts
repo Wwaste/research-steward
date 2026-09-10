@@ -182,6 +182,7 @@ describe("redact on Windows path shapes", () => {
   });
 
   it("pins over-redaction of escaped non-home Windows paths (CR-M-013)", () => {
+    // Regex-source-like text is also swallowed — fail-safe, not a leak.
     // Fail-safe direction: we may hide more than a home path, never less.
     expect(redact("C:\\\\Windows\\\\System32\\\\drivers")).not.toContain("Windows");
     expect(redact("C:\\\\Users\\\\Alice")).not.toContain("Alice");
@@ -253,6 +254,26 @@ describe("telemetry redaction on all export surfaces (CR-M-014)", () => {
       expect(surface).not.toContain("/root/secrets");
       expect(surface).not.toContain("private-run");
       expect(surface).toContain("<redacted>");
+    }
+  });
+});
+
+
+describe("telemetry file-level guard branches (CR-M-014)", () => {
+  it("refuses append when the file is foreign-owned after a successful first write", async () => {
+    const directory = await temporaryDirectory();
+    const recorder = new TelemetryRecorder({ directory });
+    await recorder.record(spanInput({ "research.node_id": "first" }));
+    const getuid = process.getuid;
+    // After the file exists, pretend we are a different user.
+    (process as { getuid?: () => number }).getuid = () => -1;
+    try {
+      await expect(
+        recorder.record(spanInput({ "research.node_id": "second" }))
+      ).rejects.toMatchObject({ code: "TELEMETRY_PATH_REJECTED" });
+    } finally {
+      if (getuid) (process as { getuid?: () => number }).getuid = getuid;
+      else delete (process as { getuid?: () => number }).getuid;
     }
   });
 });

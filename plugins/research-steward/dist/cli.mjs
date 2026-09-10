@@ -73713,7 +73713,9 @@ var ProviderForecastSchema = external_exports.object({
   // widest-layer occupancy — after one layer's head finishes, nodes from
   // later layers plus leftovers can run together (RS-V1-SUP-009 / CR-M-035).
   max_parallel_width: external_exports.number().int().min(1),
-  route: external_exports.enum(["subscription_cli", "fake"])
+  // Four routes are representable so metered/unknown appear structured with
+  // a blocking warning instead of throwing UNREPRESENTABLE_ROUTE (CR-M-040).
+  route: external_exports.enum(["subscription_cli", "metered_api", "fake", "unknown"])
 }).strict();
 var ForecastSchema = external_exports.object({
   forecast_version: external_exports.literal(FORECAST_VERSION),
@@ -73751,12 +73753,7 @@ function routeWarning(adapter, route) {
   };
 }
 function representableRoute(adapter) {
-  const route = classifyRoute(adapter);
-  if (route === "subscription_cli" || route === "fake") return route;
-  throw new ResearchStewardError(
-    "UNREPRESENTABLE_ROUTE",
-    `Adapter "${adapter}" classifies as "${route}", which the per_provider table cannot represent yet.`
-  );
+  return classifyRoute(adapter);
 }
 function nodeDepths(plan) {
   const nodes = new Map(plan.nodes.map((node2) => [node2.id, node2]));

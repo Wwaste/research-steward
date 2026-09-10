@@ -64,7 +64,9 @@
             "type": "string",
             "enum": [
               "subscription_cli",
-              "fake"
+              "metered_api",
+              "fake",
+              "unknown"
             ]
           }
         },

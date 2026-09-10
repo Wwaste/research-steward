@@ -502,3 +502,25 @@ describe("randomized plans with a fixed-seed LCG", () => {
     }
   });
 });
+
+describe("four-value provider routes (CR-M-040)", () => {
+  it("accepts metered_api and unknown in per_provider schema", () => {
+    const base = buildForecast(plan([node("a", "kimi")]));
+    const metered = {
+      ...base,
+      per_provider: {
+        ...base.per_provider,
+        kimi: { ...base.per_provider["kimi"]!, route: "metered_api" as const }
+      }
+    };
+    expect(ForecastSchema.parse(metered).per_provider["kimi"]!.route).toBe("metered_api");
+    const unknown = {
+      ...base,
+      per_provider: {
+        ...base.per_provider,
+        kimi: { ...base.per_provider["kimi"]!, route: "unknown" as const }
+      }
+    };
+    expect(ForecastSchema.parse(unknown).per_provider["kimi"]!.route).toBe("unknown");
+  });
+});
