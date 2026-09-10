@@ -1,7 +1,8 @@
-import { mkdir, open } from "node:fs/promises";
+import { constants as fsConstants, type Stats } from "node:fs";
+import { chmod, lstat, mkdir, open, type FileHandle } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { writeImmutableFile } from "./utils.js";
+import { ResearchStewardError, errorMessage, writeImmutableFile } from "./utils.js";
 
 // Telemetry for Research Steward runs, shaped after the OpenTelemetry span
 // data model so a later exporter can hand spans to any OTLP backend without a
@@ -21,7 +22,15 @@ const HEX_64 = /^[0-9a-f]{64}$/;
 // Secret-shaped material is replaced with "<redacted>". Patterns cover, in
 // order: bearer tokens, common API-key prefixes (sk-/pk-/rk-, GitHub, Slack,
 // AWS access keys, generic key/token/secret prefixes), 64-or-more hex chars
-// (credential dumps and raw digests), and absolute home paths.
+// (credential dumps and raw digests), and absolute home paths on both POSIX
+// and Windows.
+//
+// The two Windows patterns run before the POSIX ones so the drive letter or
+// the UNC host is swallowed along with the user name instead of being left
+// behind. They accept either separator, because Windows tooling emits both,
+// and they fold repeated separators so an already-escaped rendering
+// (C:\\Users\\Alice, as it appears once a log line has been through
+// JSON.stringify) redacts exactly like the raw one.
 const REDACTION_PATTERNS: readonly RegExp[] = [
   /\bBearer\s+[A-Za-z0-9._~+/=-]+/g,
   /\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}/g,
@@ -33,6 +42,15 @@ const REDACTION_PATTERNS: readonly RegExp[] = [
   /\bASIA[0-9A-Z]{16}\b/g,
   /\b(?:api|key|token|secret)[-_][A-Za-z0-9._-]{12,}/gi,
   /[0-9a-fA-F]{64,}/g,
+  // \\host\share\user\... - the host and share identify a machine and the
+  // segment under them is where a Windows home lives. The optional group
+  // absorbs the \\?\ and \\.\ device prefixes (including \\?\UNC\), which
+  // would otherwise be read as the host and leave the user name behind.
+  /\\{2}(?:[?.]\\(?:UNC\\)?)?[^\\/\s"']+(?:\\+[^\\/\s"']+){2}/g,
+  // C:\Users\Name, C:/Users/Name, \Users\Name. A drive letter or a
+  // backslash is required so a plain POSIX "/users/..." URL path is left to
+  // the case-sensitive pattern below.
+  /(?:[A-Za-z]:[\\/]+|\\+)Users[\\/]+[^\\/\s"']+/gi,
   /\/Users\/[^/\s"']+/g,
   /\/home\/[^/\s"']+/g
 ];
@@ -173,6 +191,119 @@ function toOtlpValue(value: unknown): OtlpAttributeValue {
   return { stringValue: String(value) };
 }
 
+const TRACE_FILE_MODE = 0o600;
+const TRACE_DIRECTORY_MODE = 0o700;
+const GROUP_AND_OTHER_BITS = 0o077;
+
+// O_NOFOLLOW makes the kernel refuse to open the leaf at all if it is a
+// symlink, which closes the window between the lstat below and the open;
+// O_NONBLOCK keeps a FIFO swapped in at the same moment from parking the
+// write on a reader that never arrives. Neither flag exists on Windows, where
+// they fold to 0 and the lstat/fstat guards carry the check alone.
+const TRACE_APPEND_FLAGS =
+  fsConstants.O_WRONLY |
+  fsConstants.O_APPEND |
+  fsConstants.O_CREAT |
+  (fsConstants.O_NOFOLLOW ?? 0) |
+  (fsConstants.O_NONBLOCK ?? 0);
+
+// Callers pass the offending path through redact() first: a rejection ends up
+// in an error a caller may well log, and that is no reason to leak the home
+// directory every other value in this module is stripped of.
+function pathRejected(
+  message: string,
+  details: Readonly<Record<string, unknown>> = {}
+): ResearchStewardError {
+  return new ResearchStewardError("TELEMETRY_PATH_REJECTED", message, details);
+}
+
+function foreignOwned(info: Stats): boolean {
+  // process.getuid is absent on Windows, where ownership is an ACL question
+  // rather than a uid comparison and the OS answers it at open time.
+  return typeof process.getuid === "function" && info.uid !== process.getuid();
+}
+
+/**
+ * Create the trace directory owner-only, and refuse a pre-existing one that is
+ * a symlink, is owned by somebody else, or cannot be tightened to 0700.
+ */
+async function ensureOwnerOnlyDirectory(directory: string): Promise<void> {
+  await mkdir(directory, { recursive: true, mode: TRACE_DIRECTORY_MODE });
+  // lstat, not stat: a symlink aimed at a real directory has to be rejected,
+  // not quietly resolved.
+  const info = await lstat(directory);
+  if (!info.isDirectory()) {
+    throw pathRejected(`Telemetry directory is not a directory: ${redact(directory)}`);
+  }
+  if (foreignOwned(info)) {
+    throw pathRejected(`Telemetry directory is owned by another user: ${redact(directory)}`);
+  }
+  if ((info.mode & GROUP_AND_OTHER_BITS) !== 0) {
+    try {
+      await chmod(directory, TRACE_DIRECTORY_MODE);
+    } catch (error) {
+      throw pathRejected(
+        `Telemetry directory is group- or world-accessible and could not be tightened: ${redact(directory)}`,
+        { mode: (info.mode & 0o777).toString(8), reason: errorMessage(error) }
+      );
+    }
+  }
+}
+
+/**
+ * Open spans.jsonl for append, having proved it is a regular file we own with
+ * owner-only permissions. Every failure closes the handle and throws rather
+ * than writing: a trace line is worth less than the file it would land in.
+ */
+async function openOwnerOnlyAppendHandle(tracePath: string): Promise<FileHandle> {
+  const existing = await lstat(tracePath).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (existing && !existing.isFile()) {
+    throw pathRejected(`Telemetry trace path is not a regular file: ${redact(tracePath)}`);
+  }
+  let handle: FileHandle;
+  try {
+    handle = await open(tracePath, TRACE_APPEND_FLAGS, TRACE_FILE_MODE);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // A leaf swapped for a symlink after the lstat surfaces as ELOOP from
+    // O_NOFOLLOW; report it as the rejection it is rather than as an errno.
+    if (code === "ELOOP" || code === "EMLINK" || code === "ENXIO") {
+      throw pathRejected(`Telemetry trace path is not a regular file: ${redact(tracePath)}`, {
+        reason: errorMessage(error)
+      });
+    }
+    throw error;
+  }
+  try {
+    // fstat, so the rest of the checks describe the file this descriptor is
+    // attached to and not whatever the name resolves to by now.
+    const info = await handle.stat();
+    if (!info.isFile()) {
+      throw pathRejected(`Telemetry trace path is not a regular file: ${redact(tracePath)}`);
+    }
+    if (foreignOwned(info)) {
+      throw pathRejected(`Telemetry trace file is owned by another user: ${redact(tracePath)}`);
+    }
+    if ((info.mode & GROUP_AND_OTHER_BITS) !== 0) {
+      try {
+        await handle.chmod(TRACE_FILE_MODE);
+      } catch (error) {
+        throw pathRejected(
+          `Telemetry trace file is group- or world-readable and could not be tightened: ${redact(tracePath)}`,
+          { mode: (info.mode & 0o777).toString(8), reason: errorMessage(error) }
+        );
+      }
+    }
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    throw error;
+  }
+  return handle;
+}
+
 export interface TelemetryRecorderOptions {
   directory?: string;
   optInRawContent?: boolean;
@@ -183,7 +314,6 @@ export class TelemetryRecorder {
 
   private readonly optInRawContent: boolean;
   private readonly buffer: Span[] = [];
-  private directoryReady = false;
 
   public constructor(options: TelemetryRecorderOptions = {}) {
     // Default is memory-only: no directory means nothing ever touches disk.
@@ -208,17 +338,18 @@ export class TelemetryRecorder {
 
   private async appendLine(line: string): Promise<void> {
     if (!this.jsonlPath) return;
-    if (!this.directoryReady) {
-      await mkdir(path.dirname(this.jsonlPath), { recursive: true, mode: 0o700 });
-      this.directoryReady = true;
-    }
+    // Both guards run on every append, not once per recorder: the leaf is
+    // exactly what an attacker can replace between two spans, so a cached
+    // "directory is ready" verdict would be a cached answer to the wrong
+    // question.
+    await ensureOwnerOnlyDirectory(path.dirname(this.jsonlPath));
     // O_APPEND plus a single write of the whole line keeps concurrent
     // appenders from interleaving partial records; 0o600 keeps the file
     // owner-only from the moment it exists. Known boundary: that atomicity
     // relies on platform semantics for single-write appends (safe for lines
     // around typical span size, not guaranteed for arbitrarily long lines),
     // and the test suite does not assert multi-process interleaving.
-    const handle = await open(this.jsonlPath, "a", 0o600);
+    const handle = await openOwnerOnlyAppendHandle(this.jsonlPath);
     try {
       await handle.writeFile(`${line}\n`, "utf8");
       await handle.sync();
