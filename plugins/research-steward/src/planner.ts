@@ -7,7 +7,8 @@
  * semantics via writeImmutableFile().
  */
 
-import { rm } from "node:fs/promises";
+import { rm, realpath } from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
 import { validateGraph } from "./workflow.js";
 import {
@@ -256,12 +257,19 @@ export async function writeLock(filePath: string, lock: WorkflowLock): Promise<v
  * Persist a plan and its lock as one unit (RS-V1-SUP-011). Writing them as
  * two independent writeImmutableFile calls can leave a half-committed pair
  * when the second fails. This helper:
- *   1. rejects identical destinations up front;
+ *   1. rejects identical destinations (after resolve + parent realpath);
  *   2. writes the plan first;
  *   3. if the lock write fails, removes the plan it just created so the
- *      caller never sees a plan without its lock.
+ *      caller never sees a plan without its lock. If that rollback rm also
+ *      fails, the leftover path is attached to the error details (CR-M-031).
  * Existing destinations are still never overwritten: the first EEXIST wins
  * and nothing is deleted that this call did not create.
+ *
+ * Deviation (CR-M-029): crash atomicity across two files is not implemented.
+ * A process kill between the two writes can still leave a plan without a
+ * lock. Codex asked for a recoverable transaction marker if full atomicity
+ * is not done; that marker is deferred and recorded in the Task 1.3 milestone
+ * for Codex adjudication.
  */
 export async function writePlanAndLock(
   planPath: string,
@@ -269,10 +277,13 @@ export async function writePlanAndLock(
   lockPath: string,
   lock: WorkflowLock
 ): Promise<void> {
-  if (planPath === lockPath) {
+  const canonicalPlan = await canonicalForCompare(planPath);
+  const canonicalLock = await canonicalForCompare(lockPath);
+  if (canonicalPlan === canonicalLock) {
     throw new ResearchStewardError(
       "PLAN_LOCK_PATH_COLLISION",
-      "The plan and workflow lock must be written to different paths."
+      "The plan and workflow lock must be written to different paths.",
+      { plan_path: canonicalPlan, lock_path: canonicalLock }
     );
   }
   const planBody = `${JSON.stringify(RoundtablePlanSchema.parse(plan), null, 2)}\n`;
@@ -281,7 +292,33 @@ export async function writePlanAndLock(
   try {
     await writeImmutableFile(lockPath, lockBody);
   } catch (error) {
-    await rm(planPath, { force: true }).catch(() => undefined);
+    let leftover: string | null = null;
+    try {
+      await rm(planPath, { force: true });
+    } catch {
+      leftover = planPath;
+    }
+    if (leftover !== null) {
+      throw new ResearchStewardError(
+        (error as { code?: string }).code === "EEXIST"
+          ? "EEXIST"
+          : "PLAN_LOCK_ROLLBACK_FAILED",
+        `${(error as Error).message} (rollback could not remove ${leftover})`,
+        {
+          cause_code: (error as NodeJS.ErrnoException).code,
+          leftover_plan_path: leftover
+        }
+      );
+    }
     throw error;
+  }
+}
+
+async function canonicalForCompare(candidate: string): Promise<string> {
+  const resolved = path.resolve(candidate);
+  try {
+    return path.join(await realpath(path.dirname(resolved)), path.basename(resolved));
+  } catch {
+    return resolved;
   }
 }

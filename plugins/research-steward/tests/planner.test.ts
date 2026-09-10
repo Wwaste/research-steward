@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { chmod, mkdir, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -390,6 +390,52 @@ describe("workflow lock", () => {
       code: "PLAN_LOCK_PATH_COLLISION"
     });
     await expect(readFile(same, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects plan and lock paths that alias via a symlinked parent (CR-M-030)", async () => {
+    const dir = await temporaryDirectory();
+    const real = path.join(dir, "real");
+    await mkdir(real);
+    const alias = path.join(dir, "alias");
+    await symlink(real, alias);
+    const { plan, lock } = build("quick-review");
+    await expect(
+      writePlanAndLock(path.join(real, "plan.json"), plan, path.join(alias, "plan.json"), lock)
+    ).rejects.toMatchObject({ code: "PLAN_LOCK_PATH_COLLISION" });
+    await expect(readFile(path.join(real, "plan.json"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT"
+    });
+  });
+
+  it("refuses without writing when the plan path already exists (CR-M-032)", async () => {
+    const dir = await temporaryDirectory();
+    const planPath = path.join(dir, "plan.json");
+    const lockPath = path.join(dir, "workflow.lock.json");
+    await writeFile(planPath, "pre-existing\n", "utf8");
+    const { plan, lock } = build("quick-review");
+
+    await expect(writePlanAndLock(planPath, plan, lockPath, lock)).rejects.toMatchObject({
+      code: "EEXIST"
+    });
+    expect(await readFile(planPath, "utf8")).toBe("pre-existing\n");
+    await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rolls the plan back when the lock directory is not writable (CR-M-032)", async () => {
+    const dir = await temporaryDirectory();
+    const planPath = path.join(dir, "plan.json");
+    const lockDir = path.join(dir, "locked");
+    await mkdir(lockDir, { mode: 0o500 });
+    const lockPath = path.join(lockDir, "workflow.lock.json");
+    const { plan, lock } = build("quick-review");
+    try {
+      await expect(writePlanAndLock(planPath, plan, lockPath, lock)).rejects.toMatchObject({
+        code: "EACCES"
+      });
+    } finally {
+      await chmod(lockDir, 0o700);
+    }
+    await expect(readFile(planPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("keeps schemas/workflow-lock.schema.json consistent with the Zod schema", async () => {
