@@ -1,9 +1,13 @@
-import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { lstat, open, readFile, rm } from "node:fs/promises";
 import { isMap, isScalar, parseDocument, type Document, type YAMLMap, isSeq } from "yaml";
 import { resolveExistingInside } from "./paths.js";
 import { readEvents, unresolvedBlockedEvents } from "./store.js";
 import type { CommittedEvent } from "./protocol.js";
-import { ResearchStewardError, atomicWriteFile, sha256Text } from "./utils.js";
+import { ResearchStewardError, atomicWriteFile, errorMessage } from "./utils.js";
+
+/** A lock older than this is treated as crash residue and reclaimed. */
+const ACCEPTANCE_LOCK_STALE_MS = 30_000;
 
 export interface PrepareAcceptanceOptions {
   approvalId?: string;
@@ -27,6 +31,61 @@ function invalidDocument(reason: string): ResearchStewardError {
     "INVALID_ACCEPTANCE_DOCUMENT",
     `ACCEPTANCE.yaml cannot be prepared: ${reason}`
   );
+}
+
+function sha256Bytes(bytes: Buffer): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+/**
+ * Exclusive O_EXCL lock covering the whole read-check-write of ACCEPTANCE.yaml.
+ * Without it, two prepareAcceptance calls (or a human editor racing the
+ * residual CAS window) can interleave renames and lose accepts updates.
+ */
+async function acquireAcceptanceLock(
+  acceptancePath: string
+): Promise<{ release: () => Promise<void> }> {
+  const lockPath = `${acceptancePath}.lock`;
+  try {
+    const handle = await open(lockPath, "wx", 0o600);
+    try {
+      await handle.writeFile(
+        `${JSON.stringify({ pid: process.pid, at: new Date().toISOString() })}\n`
+      );
+    } finally {
+      await handle.close();
+    }
+    return {
+      release: async () => {
+        await rm(lockPath, { force: true });
+      }
+    };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      throw new ResearchStewardError(
+        "ACCEPTANCE_LOCK_FAILED",
+        `Could not create the acceptance lock: ${errorMessage(error)}`
+      );
+    }
+    let stale = false;
+    try {
+      const info = await lstat(lockPath);
+      stale = Date.now() - info.mtimeMs > ACCEPTANCE_LOCK_STALE_MS;
+    } catch (statError) {
+      if ((statError as NodeJS.ErrnoException).code !== "ENOENT") throw statError;
+      // Lock vanished between open and lstat; treat as free and retry once.
+      return acquireAcceptanceLock(acceptancePath);
+    }
+    if (stale) {
+      await rm(lockPath, { force: true }).catch(() => undefined);
+      return acquireAcceptanceLock(acceptancePath);
+    }
+    throw new ResearchStewardError(
+      "ACCEPTANCE_LOCKED",
+      "Another prepareAcceptance is already reading or writing ACCEPTANCE.yaml. " +
+        "Wait for it to finish, or remove a stale .lock file after confirming no writer is live."
+    );
+  }
 }
 
 function approvalIdOf(approval: YAMLMap): string {
@@ -131,8 +190,22 @@ export async function prepareAcceptance(
   options: PrepareAcceptanceOptions = {}
 ): Promise<PrepareAcceptanceResult> {
   const acceptancePath = await resolveExistingInside(root, "ACCEPTANCE.yaml");
-  const originalText = await readFile(acceptancePath, "utf8");
-  const originalHash = sha256Text(originalText);
+  const lock = await acquireAcceptanceLock(acceptancePath);
+  try {
+    return await prepareAcceptanceLocked(root, acceptancePath, options);
+  } finally {
+    await lock.release();
+  }
+}
+
+async function prepareAcceptanceLocked(
+  root: string,
+  acceptancePath: string,
+  options: PrepareAcceptanceOptions
+): Promise<PrepareAcceptanceResult> {
+  const originalBytes = await readFile(acceptancePath);
+  const originalHash = sha256Bytes(originalBytes);
+  const originalText = originalBytes.toString("utf8");
   const doc = parseDocument(originalText);
   if (doc.errors.length > 0) {
     throw invalidDocument(doc.errors[0]!.message);
@@ -192,13 +265,30 @@ export async function prepareAcceptance(
   }
   writeAcceptsValue(doc, approval, "verification_event_id", verification.event_id);
   writeAcceptsValue(doc, approval, "verification_event_hash", verification.event_hash);
-  // Compare-and-swap against the bytes this run parsed: a human editing status,
-  // authority or note while the ledger checks ran must never be overwritten.
-  if (sha256Text(await readFile(acceptancePath, "utf8")) !== originalHash) {
+
+  // Defense in depth under the exclusive lock: still CAS the raw bytes in
+  // case a writer ignored the lock. The lock is the primary mutual exclusion;
+  // this closes the residual rename window for cooperative writers and any
+  // human editor that saves between our re-read and rename.
+  let observedHash: string;
+  try {
+    observedHash = sha256Bytes(await readFile(acceptancePath));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new ResearchStewardError(
+        "ACCEPTANCE_DOCUMENT_CHANGED",
+        "ACCEPTANCE.yaml disappeared while acceptance was being prepared; nothing was written.",
+        { phase: "prepare", expected_sha256: originalHash, observed_sha256: null }
+      );
+    }
+    throw error;
+  }
+  if (observedHash !== originalHash) {
     throw new ResearchStewardError(
       "ACCEPTANCE_DOCUMENT_CHANGED",
-      "ACCEPTANCE.yaml changed while acceptance was being prepared; nothing was written. Re-read the document and prepare again.",
-      { expected_sha256: originalHash }
+      "ACCEPTANCE.yaml changed while acceptance was being prepared; nothing was written. " +
+        "Re-read the document and prepare again.",
+      { phase: "prepare", expected_sha256: originalHash, observed_sha256: observedHash }
     );
   }
   await atomicWriteFile(acceptancePath, doc.toString());

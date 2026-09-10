@@ -167,4 +167,78 @@ describe("prepareAcceptance concurrent-edit safety (RS-V1-SUP-014)", () => {
       verification_event_hash: report.verification_event_hash
     });
   });
+
+  it("refuses a second helper while the first still holds the acceptance lock (CR-M-001)", async () => {
+    const { root } = await verifiedProject();
+    await writeFile(path.join(root, "ACCEPTANCE.yaml"), TWO_APPROVALS, "utf8");
+
+    let nested: Promise<unknown> | undefined;
+    ledgerRace.duringReadEvents = async () => {
+      // Capture the rejection immediately so vitest does not flag an
+      // unhandled rejection before the assertion below attaches.
+      nested = prepareAcceptance(root, { approvalId: "reviewer" }).then(
+        (value) => value,
+        (error: unknown) => error
+      );
+    };
+
+    const first = await prepareAcceptance(root, { approvalId: "lead" });
+    expect(first.changed).toBe(true);
+    expect(await nested).toMatchObject({ code: "ACCEPTANCE_LOCKED" });
+
+    // The loser can retry after the winner releases; both accepts survive.
+    const second = await prepareAcceptance(root, { approvalId: "reviewer" });
+    expect(second.changed).toBe(true);
+    const entries = await approvals(root);
+    expect(entries.find((entry) => entry.id === "lead")!.accepts).toEqual({
+      verification_event_id: first.verification_event_id,
+      verification_event_hash: first.verification_event_hash
+    });
+    expect(entries.find((entry) => entry.id === "reviewer")!.accepts).toEqual({
+      verification_event_id: second.verification_event_id,
+      verification_event_hash: second.verification_event_hash
+    });
+  });
+
+  it("refuses when a human adds an approval entry during the ledger checks", async () => {
+    const { root } = await verifiedProject();
+    ledgerRace.duringReadEvents = raceWrite(
+      root,
+      `${HUMAN_EDITED.replace(
+        "    note: human wrote this during ledger check\n",
+        "    note: human wrote this during ledger check\n  - id: extra\n    required: false\n    status: pending\n    authority: \"\"\n"
+      )}`
+    );
+    await expectErrorCode(prepareAcceptance(root, {}), "ACCEPTANCE_DOCUMENT_CHANGED");
+  });
+
+  it("refuses when a human only reorders approval entries during the ledger checks", async () => {
+    const { root } = await verifiedProject();
+    await writeFile(path.join(root, "ACCEPTANCE.yaml"), TWO_APPROVALS, "utf8");
+    ledgerRace.duringReadEvents = raceWrite(
+      root,
+      `version: 1
+commands: []
+human_approvals:
+  - id: reviewer
+    required: true
+    status: pending
+    authority: ""
+    accepts:
+      verification_event_id: ""
+      verification_event_hash: ""
+  - id: lead
+    required: true
+    status: pending
+    authority: ""
+    accepts:
+      verification_event_id: ""
+      verification_event_hash: ""
+`
+    );
+    await expectErrorCode(
+      prepareAcceptance(root, { approvalId: "lead" }),
+      "ACCEPTANCE_DOCUMENT_CHANGED"
+    );
+  });
 });

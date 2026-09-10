@@ -72996,6 +72996,9 @@ async function runDoctor(options = {}) {
   });
 }
 
+// src/planner.ts
+import { rm as rm6 } from "node:fs/promises";
+
 // src/presets.ts
 var PRESET_VERSION = "1.0.0";
 var REVIEW_TIMEOUT_MS = 3e5;
@@ -73590,10 +73593,24 @@ function buildPlan(input2) {
   });
   return { plan, lock };
 }
-async function writeLock(filePath, lock) {
-  const validated = WorkflowLockSchema.parse(lock);
-  await writeImmutableFile(filePath, `${JSON.stringify(validated, null, 2)}
-`);
+async function writePlanAndLock(planPath, plan, lockPath, lock) {
+  if (planPath === lockPath) {
+    throw new ResearchStewardError(
+      "PLAN_LOCK_PATH_COLLISION",
+      "The plan and workflow lock must be written to different paths."
+    );
+  }
+  const planBody = `${JSON.stringify(RoundtablePlanSchema.parse(plan), null, 2)}
+`;
+  const lockBody = `${JSON.stringify(WorkflowLockSchema.parse(lock), null, 2)}
+`;
+  await writeImmutableFile(planPath, planBody);
+  try {
+    await writeImmutableFile(lockPath, lockBody);
+  } catch (error61) {
+    await rm6(planPath, { force: true }).catch(() => void 0);
+    throw error61;
+  }
 }
 
 // src/forecast.ts
@@ -73742,8 +73759,10 @@ function buildForecast(rawPlan) {
     worst_case_invocations: worstCaseInvocations,
     fake_invocations: fakeInvocations,
     per_provider: perProvider,
-    prompt_char_upper_bound: plan.limits.max_prompt_chars * plan.nodes.length,
-    output_char_upper_bound: plan.limits.max_output_chars * plan.nodes.length,
+    // Character bounds are per invocation, not per node: a node that retries
+    // can consume its prompt/output budget on every attempt (RS-V1-SUP-008).
+    prompt_char_upper_bound: plan.limits.max_prompt_chars * plan.nodes.length * attemptsPerNode,
+    output_char_upper_bound: plan.limits.max_output_chars * plan.nodes.length * attemptsPerNode,
     wall_time_upper_bound_ms: wallTimeUpperBoundMs,
     wall_time_bound_source: criticalPathWins ? "critical_path_estimate" : "limits.max_wall_time_ms",
     warnings
@@ -73762,7 +73781,7 @@ import {
   mkdtemp as mkdtemp2,
   readFile as readFile5,
   readdir as readdir3,
-  rm as rm6,
+  rm as rm7,
   stat as stat5,
   unlink
 } from "node:fs/promises";
@@ -74006,7 +74025,7 @@ async function cleanRoomVerify(archivePath, expected) {
       }
     }
   } finally {
-    await rm6(cleanRoot, { recursive: true, force: true });
+    await rm7(cleanRoot, { recursive: true, force: true });
   }
 }
 async function resolvePackageProvenance(root, requestedPaths) {
@@ -74354,8 +74373,8 @@ async function packageHandoffLocked(root, packageId, requestedPaths) {
     }
     throw error61;
   } finally {
-    await rm6(temporaryArchive, { force: true }).catch(() => void 0);
-    await rm6(staging, { recursive: true, force: true }).catch(() => void 0);
+    await rm7(temporaryArchive, { force: true }).catch(() => void 0);
+    await rm7(staging, { recursive: true, force: true }).catch(() => void 0);
   }
 }
 
@@ -74794,7 +74813,9 @@ function buildServer(policy) {
         project_root: external_exports.string().min(1).max(4096).optional()
       },
       annotations: {
-        readOnlyHint: true,
+        // Doctor writes a reversible probe file under .research/ when a project
+        // root is supplied (RS-V1-SUP-010); it is idempotent, not read-only.
+        readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: false
@@ -74859,9 +74880,12 @@ function buildServer(policy) {
         const root = await policy.resolveProject(input2.project_root);
         const planDestination = await resolveDestinationInside(root, input2.plan_path);
         const lockDestination = await resolveDestinationInside(root, input2.lock_path);
-        await writeImmutableFile(planDestination, `${JSON.stringify(built.plan, null, 2)}
-`);
-        await writeLock(lockDestination, built.lock);
+        await writePlanAndLock(
+          planDestination,
+          built.plan,
+          lockDestination,
+          built.lock
+        );
         return jsonResult({ ...built, written: true });
       } catch (error61) {
         return toolError(error61);
