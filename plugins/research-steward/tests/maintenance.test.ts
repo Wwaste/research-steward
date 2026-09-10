@@ -602,3 +602,24 @@ describe("rehearseRestore isolation and copy failures", () => {
     }
   });
 });
+
+describe("symlink tombstone exclusion (CR-M-019)", () => {
+  it("excludes a symlink-replaced tombstone from the exact target set (CR-M-019)", async () => {
+    const root = await initializedProject("Symlink tombstone");
+    const real = path.join(root, ".research", `.event-lock.retired-${generation("real")}`);
+    await mkdir(real);
+    const plan = await planMaintenance(root, await inspectMaintenance(root));
+    expect(plan.actions.map((a) => a.kind)).toContain("delete_tombstones");
+
+    // Replace the directory with a symlink to another directory of the same name shape.
+    const outside = await temporaryDirectory();
+    await rm(real, { recursive: true, force: true });
+    await symlink(outside, real);
+
+    await expectErrorCode(
+      applyMaintenance(root, plan, { offline_confirmed: true, plan_hash: plan.plan_hash }),
+      "MAINTENANCE_PLAN_STALE"
+    );
+  });
+
+});

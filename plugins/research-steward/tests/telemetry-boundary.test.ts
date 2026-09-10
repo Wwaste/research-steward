@@ -231,3 +231,28 @@ describe("telemetry hardlink and parent guards", () => {
     expect(await readFile(secret, "utf8")).toBe("PRIVATE\n");
   });
 });
+
+describe("telemetry redaction on all export surfaces (CR-M-014)", () => {
+  it("redacts /root paths in snapshot, jsonl, and OTLP", async () => {
+    const directory = await temporaryDirectory();
+    const recorder = new TelemetryRecorder({ directory });
+    await recorder.record(
+      spanInput({
+        "research.status": "failed reading /root/secrets/key.pem",
+        "research.provider": "/tmp/private-run/notes.txt"
+      })
+    );
+    const exportPath = path.join(directory, "export.otlp.json");
+    await recorder.exportOTLPFile(exportPath);
+    const surfaces = [
+      JSON.stringify(recorder.snapshot()),
+      await readFile(recorder.jsonlPath!, "utf8"),
+      await readFile(exportPath, "utf8")
+    ];
+    for (const surface of surfaces) {
+      expect(surface).not.toContain("/root/secrets");
+      expect(surface).not.toContain("private-run");
+      expect(surface).toContain("<redacted>");
+    }
+  });
+});
