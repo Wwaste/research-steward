@@ -14,9 +14,9 @@ import { ResearchStewardError, errorMessage, sha256Text, stableJson } from "./ut
 
 /**
  * Maintenance separates observation from mutation: inspectMaintenance is
- * read-only, planMaintenance is a pure function of the inspection, and only
- * applyMaintenance touches the filesystem — after an explicit offline
- * confirmation.
+ * read-only, planMaintenance freezes an exact target set (and may lstat the
+ * index anomaly for a shallow digest), and only applyMaintenance touches the
+ * filesystem — after an explicit offline confirmation bound to plan_hash.
  */
 
 export type IndexEntryKind = "missing" | "file" | "directory" | "symlink" | "other";
@@ -54,7 +54,14 @@ export interface MaintenanceAction {
   targets: number;
   target_paths: string[];
   target_identities: TombstoneTarget[];
-  detail?: { index_kind: IndexEntryKind; summary: string };
+  detail?: {
+    index_kind: IndexEntryKind;
+    summary: string;
+    /** Shallow content digest of the anomaly, recomputed at apply (CR-M-020). */
+    content_sha256: string;
+    entry_names: string[];
+    entry_count: number;
+  };
 }
 
 export interface MaintenancePlan {
@@ -193,6 +200,11 @@ async function classifyIndexPath(root: string): Promise<{
     info = await lstat(absolute);
   } catch (error) {
     if (isEnoent(error)) return { present: false, kind: "missing", absolute: null };
+    // Parent is a regular file, so the leaf path is ENOTDIR — still a
+    // non-regular index location that quarantine must be able to see (CR-M-023).
+    if ((error as NodeJS.ErrnoException).code === "ENOTDIR") {
+      return { present: true, kind: "other", absolute };
+    }
     throw error;
   }
   if (info.isSymbolicLink()) return { present: true, kind: "symlink", absolute };
@@ -204,21 +216,40 @@ async function classifyIndexPath(root: string): Promise<{
 async function projectIdentity(
   root: string
 ): Promise<{ project_id: string | null; ledger_head: string | null }> {
+  // Read manifest and head independently: a missing ledger-head.json must not
+  // discard a valid project_id, or cross-project plan reuse loses its gate
+  // exactly on the damaged projects maintenance is for (CR-M-018).
+  let projectId: string | null = null;
+  let ledgerHead: string | null = null;
   try {
     const manifestPath = await resolvePrivateExistingInside(root, ".research/manifest.json");
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { project_id?: string };
+    projectId = typeof manifest.project_id === "string" ? manifest.project_id : null;
+  } catch (error) {
+    if (isEnoent(error)) projectId = null;
+    else if (error instanceof SyntaxError) {
+      throw new ResearchStewardError(
+        "PROJECT_IDENTITY_UNREADABLE",
+        `manifest.json is not valid JSON: ${errorMessage(error)}`
+      );
+    } else throw error;
+  }
+  try {
     const headPath = await resolvePrivateExistingInside(root, ".research/ledger-head.json");
     const head = JSON.parse(await readFile(headPath, "utf8")) as {
       last_event_hash?: string | null;
     };
-    return {
-      project_id: typeof manifest.project_id === "string" ? manifest.project_id : null,
-      ledger_head: typeof head.last_event_hash === "string" ? head.last_event_hash : null
-    };
+    ledgerHead = typeof head.last_event_hash === "string" ? head.last_event_hash : null;
   } catch (error) {
-    if (isEnoent(error)) return { project_id: null, ledger_head: null };
-    throw error;
+    if (isEnoent(error)) ledgerHead = null;
+    else if (error instanceof SyntaxError) {
+      throw new ResearchStewardError(
+        "PROJECT_IDENTITY_UNREADABLE",
+        `ledger-head.json is not valid JSON: ${errorMessage(error)}`
+      );
+    } else throw error;
   }
+  return { project_id: projectId, ledger_head: ledgerHead };
 }
 
 export async function inspectMaintenance(root: string): Promise<MaintenanceInspection> {
@@ -294,11 +325,41 @@ export async function inspectMaintenance(root: string): Promise<MaintenanceInspe
   };
 }
 
-function planBodyHash(plan: Omit<MaintenancePlan, "plan_id" | "plan_hash">): string {
+function planBodyHash(plan: Omit<MaintenancePlan, "plan_hash">): string {
+  // plan_id is inside the hashed body so a swapped id cannot ride along with a
+  // valid hash (CR-M-022).
   return sha256Text(stableJson(plan));
 }
 
-export function planMaintenance(inspection: MaintenanceInspection): MaintenancePlan {
+/**
+ * Bounded shallow digest of a non-regular index anomaly: depth-1 names only,
+ * never a recursive walk (a hostile tree must not become a DoS surface).
+ */
+async function shallowContentDigest(
+  absolute: string
+): Promise<{ content_sha256: string; entry_names: string[]; entry_count: number }> {
+  const info = await lstat(absolute);
+  if (!info.isDirectory()) {
+    const payload = `kind:${info.isSymbolicLink() ? "symlink" : "other"}`;
+    return {
+      content_sha256: sha256Text(payload),
+      entry_names: [],
+      entry_count: 0
+    };
+  }
+  const names = (await readdir(absolute)).sort();
+  const capped = names.slice(0, 32);
+  return {
+    content_sha256: sha256Text(stableJson({ names: capped, count: names.length })),
+    entry_names: capped,
+    entry_count: names.length
+  };
+}
+
+export async function planMaintenance(
+  root: string,
+  inspection: MaintenanceInspection
+): Promise<MaintenancePlan> {
   const actions: MaintenanceAction[] = [];
   if (inspection.tombstones.count > 0) {
     actions.push({
@@ -323,6 +384,11 @@ export function planMaintenance(inspection: MaintenanceInspection): MaintenanceP
     } else {
       // A non-regular entry at the index path must never be overwritten in
       // place: quarantine it aside first, then rebuild a real cache.
+      const entry = await classifyIndexPath(root);
+      const digest =
+        entry.absolute === null
+          ? { content_sha256: sha256Text("missing"), entry_names: [], entry_count: 0 }
+          : await shallowContentDigest(entry.absolute);
       actions.push({
         id: "quarantine-index",
         kind: "quarantine_index",
@@ -332,7 +398,8 @@ export function planMaintenance(inspection: MaintenanceInspection): MaintenanceP
         target_identities: [],
         detail: {
           index_kind: inspection.index.kind,
-          summary: `ledger-index.json is a ${inspection.index.kind}, not a regular file`
+          summary: `ledger-index.json is a ${inspection.index.kind}, not a regular file`,
+          ...digest
         }
       });
     }
@@ -347,14 +414,15 @@ export function planMaintenance(inspection: MaintenanceInspection): MaintenanceP
       target_identities: []
     });
   }
+  const plan_id = randomUUID();
   const body = {
+    plan_id,
     project_id: inspection.project_id,
     ledger_head: inspection.ledger_head,
     inspected_at: inspection.inspected_at,
     actions
   };
-  const plan_id = randomUUID();
-  return { plan_id, plan_hash: planBodyHash(body), ...body };
+  return { plan_hash: planBodyHash(body), ...body };
 }
 
 async function deleteTombstones(
@@ -409,7 +477,10 @@ function identitiesMatch(
   current: readonly TombstoneTarget[]
 ): boolean {
   if (planned.length !== current.length) return false;
+  const plannedPaths = new Set(planned.map((target) => target.relative_path));
+  if (plannedPaths.size !== planned.length) return false;
   const byPath = new Map(current.map((target) => [target.relative_path, target]));
+  if (byPath.size !== current.length) return false;
   for (const target of planned) {
     const found = byPath.get(target.relative_path);
     if (!found) return false;
@@ -419,10 +490,32 @@ function identitiesMatch(
   return true;
 }
 
+function recomputePlanHash(plan: MaintenancePlan): string {
+  const { plan_hash: _ignored, ...body } = plan;
+  return planBodyHash(body);
+}
+
+async function writeIndexSafely(root: string): Promise<void> {
+  try {
+    await writeLedgerIndex(root, await buildLedgerIndex(root));
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EISDIR" || code === "ENOTEMPTY" || code === "EEXIST" || code === "ENOTDIR") {
+      throw new ResearchStewardError(
+        "INDEX_WRITE_RACED",
+        `Writing the ledger index lost a race with a concurrent filesystem change (${code}); ` +
+          "re-inspect before applying again.",
+        { errno: code }
+      );
+    }
+    throw error;
+  }
+}
+
 export async function applyMaintenance(
   root: string,
   plan: MaintenancePlan,
-  options: { offline_confirmed: boolean; plan_hash?: string }
+  options: { offline_confirmed: boolean; plan_hash: string }
 ): Promise<MaintenanceApplyResult> {
   if (options.offline_confirmed !== true) {
     throw new ResearchStewardError(
@@ -431,10 +524,13 @@ export async function applyMaintenance(
         "after every writer for this project has stopped."
     );
   }
-  if (options.plan_hash !== undefined && options.plan_hash !== plan.plan_hash) {
+  const recomputed = recomputePlanHash(plan);
+  if (recomputed !== plan.plan_hash || options.plan_hash !== plan.plan_hash) {
     throw new ResearchStewardError(
       "MAINTENANCE_PLAN_HASH_MISMATCH",
-      "The supplied plan_hash does not match this plan; re-inspect and re-plan before applying."
+      "plan_hash must match a recomputation of the plan body and the caller-supplied value; " +
+        "re-inspect and re-plan before applying.",
+      { recomputed, declared: plan.plan_hash, supplied: options.plan_hash }
     );
   }
   const identity = await projectIdentity(root);
@@ -454,24 +550,24 @@ export async function applyMaintenance(
     switch (action.kind) {
       case "delete_tombstones": {
         const records = await scanTombstones(root);
-        if (
-          records.length !== action.targets ||
-          !identitiesMatch(
-            action.target_identities,
-            records.map(({ relative_path, generation, owner_sha256 }) => ({
-              relative_path,
-              generation,
-              owner_sha256
-            }))
-          )
-        ) {
+        const current = records.map(({ relative_path, generation, owner_sha256 }) => ({
+          relative_path,
+          generation,
+          owner_sha256
+        }));
+        if (records.length !== action.targets || !identitiesMatch(action.target_identities, current)) {
           throw new ResearchStewardError(
             "MAINTENANCE_PLAN_STALE",
             `The plan names ${action.targets} tombstone target(s) but the current scan ` +
               `does not match that exact path/generation/owner set; re-inspect and re-plan before applying.`
           );
         }
-        const { deleted, skipped } = await deleteTombstones(root, records);
+        // Delete only the frozen target set, never the raw rescan (CR-M-016).
+        const byPath = new Map(records.map((record) => [record.relative_path, record]));
+        const frozen = action.target_identities
+          .map((target) => byPath.get(target.relative_path))
+          .filter((record): record is TombstoneRecord => record !== undefined);
+        const { deleted, skipped } = await deleteTombstones(root, frozen);
         results.push({ id: action.id, kind: action.kind, completed: deleted, skipped });
         break;
       }
@@ -484,7 +580,7 @@ export async function applyMaintenance(
               "Use a quarantine_index action first."
           );
         }
-        await writeLedgerIndex(root, await buildLedgerIndex(root));
+        await writeIndexSafely(root);
         results.push({ id: action.id, kind: action.kind, completed: 1, skipped: 0 });
         break;
       }
@@ -497,6 +593,15 @@ export async function applyMaintenance(
           );
         }
         if (entry.absolute && entry.present) {
+          const digest = await shallowContentDigest(entry.absolute);
+          if (action.detail && digest.content_sha256 !== action.detail.content_sha256) {
+            throw new ResearchStewardError(
+              "MAINTENANCE_PLAN_STALE",
+              "The quarantined index path content changed since the plan was created; " +
+                "re-inspect and re-plan before applying.",
+              { planned: action.detail.content_sha256, observed: digest.content_sha256 }
+            );
+          }
           await ensurePrivateDirectoryInside(root, ".research/cache");
           const quarantineRelative = `.research/cache/ledger-index.json.quarantined-${plan.plan_id}`;
           const quarantineAbsolute = await resolvePrivateDestinationInside(
@@ -508,11 +613,12 @@ export async function applyMaintenance(
           } catch (error) {
             throw new ResearchStewardError(
               "INDEX_QUARANTINE_FAILED",
-              `Quarantining the non-regular ledger index failed: ${errorMessage(error)}`
+              `Quarantining the non-regular ledger index failed: ${errorMessage(error)}`,
+              { errno: (error as NodeJS.ErrnoException).code }
             );
           }
         }
-        await writeLedgerIndex(root, await buildLedgerIndex(root));
+        await writeIndexSafely(root);
         results.push({ id: action.id, kind: action.kind, completed: 1, skipped: 0 });
         break;
       }

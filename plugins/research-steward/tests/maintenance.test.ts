@@ -12,7 +12,7 @@ import {
   type MaintenancePlan
 } from "../src/maintenance.js";
 import { appendEvent, freezePacket, readEvents } from "../src/store.js";
-import { sha256Text } from "../src/utils.js";
+import { sha256Text, stableJson } from "../src/utils.js";
 import {
   eventFiles,
   expectErrorCode,
@@ -136,7 +136,7 @@ describe("inspectMaintenance", () => {
     });
     const inspection = await inspectMaintenance(root);
     expect(inspection.index).toEqual({ present: true, stale: true, kind: "directory" });
-    const plan = planMaintenance(inspection);
+    const plan = await planMaintenance(root, inspection);
     expect(plan.actions.map((action) => action.kind)).toContain("quarantine_index");
     expect(plan.actions.map((action) => action.kind)).not.toContain("rebuild_index");
   });
@@ -156,7 +156,8 @@ describe("inspectMaintenance", () => {
 });
 
 describe("planMaintenance", () => {
-  it("is a pure function that freezes exact targets and project identity", () => {
+  it("freezes exact targets and project identity", async () => {
+    const rootForPlan = await temporaryDirectory();
     const inspection: MaintenanceInspection = {
       project_id: "11111111-1111-1111-1111-111111111111",
       ledger_head: "a".repeat(64),
@@ -176,7 +177,7 @@ describe("planMaintenance", () => {
       index: { present: true, stale: true, kind: "file" },
       backups: { present: false }
     };
-    const plan = planMaintenance(inspection);
+    const plan = await planMaintenance(rootForPlan, inspection);
     expect(plan.plan_hash).toMatch(/^[a-f0-9]{64}$/);
     expect(plan.project_id).toBe(inspection.project_id);
     expect(plan.ledger_head).toBe(inspection.ledger_head);
@@ -186,7 +187,8 @@ describe("planMaintenance", () => {
     expect(plan.actions.map((action) => action.kind)).toContain("rebuild_index");
   });
 
-  it("plans an explicit no-op for a clean inspection", () => {
+  it("plans an explicit no-op for a clean inspection", async () => {
+    const rootForPlan = await temporaryDirectory();
     const inspection: MaintenanceInspection = {
       project_id: null,
       ledger_head: null,
@@ -196,7 +198,7 @@ describe("planMaintenance", () => {
       index: { present: false, stale: false, kind: "missing" },
       backups: { present: false }
     };
-    const plan = planMaintenance(inspection);
+    const plan = await planMaintenance(rootForPlan, inspection);
     expect(plan.actions).toEqual([
       {
         id: "no-op",
@@ -214,10 +216,10 @@ describe("applyMaintenance", () => {
   it("refuses to run without explicit offline confirmation", async () => {
     const root = await initializedProject("Offline gate");
     const { tombstones } = await plantTombstones(root);
-    const plan = planMaintenance(await inspectMaintenance(root));
+    const plan = await planMaintenance(root, await inspectMaintenance(root));
 
     await expectErrorCode(
-      applyMaintenance(root, plan, { offline_confirmed: false }),
+      applyMaintenance(root, plan, { offline_confirmed: false, plan_hash: plan.plan_hash }),
       "MAINTENANCE_REQUIRES_OFFLINE"
     );
     for (const tombstone of tombstones) {
@@ -244,8 +246,8 @@ describe("applyMaintenance", () => {
 
     const inspection = await inspectMaintenance(root);
     expect(inspection.tombstones.count).toBe(baseline + 6);
-    const plan = planMaintenance(inspection);
-    const result = await applyMaintenance(root, plan, { offline_confirmed: true });
+    const plan = await planMaintenance(root, inspection);
+    const result = await applyMaintenance(root, plan, { offline_confirmed: true, plan_hash: plan.plan_hash });
 
     const deleteResult = result.actions.find((action) => action.kind === "delete_tombstones");
     expect(deleteResult).toMatchObject({ completed: baseline + 5, skipped: 1 });
@@ -275,9 +277,9 @@ describe("applyMaintenance", () => {
     });
     await expectErrorCode(readEventsWithIndex(root), "STALE_LEDGER_INDEX");
 
-    const plan = planMaintenance(await inspectMaintenance(root));
+    const plan = await planMaintenance(root, await inspectMaintenance(root));
     expect(plan.actions.map((action) => action.kind)).toContain("rebuild_index");
-    await applyMaintenance(root, plan, { offline_confirmed: true });
+    await applyMaintenance(root, plan, { offline_confirmed: true, plan_hash: plan.plan_hash });
 
     expect(await readEventsWithIndex(root)).toEqual(await readEvents(root));
     expect((await inspectMaintenance(root)).index).toEqual({
@@ -355,8 +357,8 @@ describe("applyMaintenance hardening", () => {
     // refuse to treat this as a retired lease.
     await mkdir(path.join(odd, "owner.json"), { recursive: true });
 
-    const plan = planMaintenance(await inspectMaintenance(root));
-    const result = await applyMaintenance(root, plan, { offline_confirmed: true });
+    const plan = await planMaintenance(root, await inspectMaintenance(root));
+    const result = await applyMaintenance(root, plan, { offline_confirmed: true, plan_hash: plan.plan_hash });
     const deleteResult = result.actions.find((action) => action.kind === "delete_tombstones");
     expect(deleteResult?.skipped).toBe(1);
     expect(await pathExists(odd)).toBe(true);
@@ -364,13 +366,13 @@ describe("applyMaintenance hardening", () => {
 
   it("refuses a plan whose tombstone targets no longer match the current scan", async () => {
     const root = await initializedProject("Stale plan");
-    const plan = planMaintenance(await inspectMaintenance(root));
+    const plan = await planMaintenance(root, await inspectMaintenance(root));
     expect(plan.actions.map((action) => action.kind)).toContain("delete_tombstones");
     const late = path.join(root, ".research", `.event-lock.retired-${generation("late")}`);
     await mkdir(late);
 
     await expectErrorCode(
-      applyMaintenance(root, plan, { offline_confirmed: true }),
+      applyMaintenance(root, plan, { offline_confirmed: true, plan_hash: plan.plan_hash }),
       "MAINTENANCE_PLAN_STALE"
     );
     expect(await pathExists(late)).toBe(true);
@@ -388,7 +390,7 @@ describe("applyMaintenance hardening", () => {
       `.event-lock.retired-${generation("original")}`
     );
     await mkdir(original);
-    const plan = planMaintenance(await inspectMaintenance(root));
+    const plan = await planMaintenance(root, await inspectMaintenance(root));
     expect(plan.actions.map((action) => action.kind)).toContain("delete_tombstones");
 
     await rm(original, { recursive: true, force: true });
@@ -400,7 +402,7 @@ describe("applyMaintenance hardening", () => {
     await mkdir(replacement);
 
     await expectErrorCode(
-      applyMaintenance(root, plan, { offline_confirmed: true }),
+      applyMaintenance(root, plan, { offline_confirmed: true, plan_hash: plan.plan_hash }),
       "MAINTENANCE_PLAN_STALE"
     );
     expect(await pathExists(replacement)).toBe(true);
@@ -416,12 +418,12 @@ describe("applyMaintenance hardening", () => {
     );
     await mkdir(tombstone);
     await writeFile(path.join(tombstone, "owner.json"), '{"owner_token":"one"}\n', "utf8");
-    const plan = planMaintenance(await inspectMaintenance(root));
+    const plan = await planMaintenance(root, await inspectMaintenance(root));
 
     await writeFile(path.join(tombstone, "owner.json"), '{"owner_token":"two"}\n', "utf8");
 
     await expectErrorCode(
-      applyMaintenance(root, plan, { offline_confirmed: true }),
+      applyMaintenance(root, plan, { offline_confirmed: true, plan_hash: plan.plan_hash }),
       "MAINTENANCE_PLAN_STALE"
     );
     expect(await pathExists(tombstone)).toBe(true);
@@ -429,7 +431,7 @@ describe("applyMaintenance hardening", () => {
 
   it("rejects a forged plan_hash before touching the filesystem", async () => {
     const root = await initializedProject("Forged hash");
-    const plan = planMaintenance(await inspectMaintenance(root));
+    const plan = await planMaintenance(root, await inspectMaintenance(root));
     await expectErrorCode(
       applyMaintenance(root, plan, {
         offline_confirmed: true,
@@ -439,16 +441,36 @@ describe("applyMaintenance hardening", () => {
     );
   });
 
+  it("rejects a plan whose body was tampered even if plan_hash field is kept (CR-M-015)", async () => {
+    const root = await initializedProject("Tampered body");
+    const plan = await planMaintenance(root, await inspectMaintenance(root));
+    const tampered: MaintenancePlan = {
+      ...plan,
+      actions: plan.actions.map((action) =>
+        action.kind === "delete_tombstones"
+          ? { ...action, target_paths: [".research/.event-lock.retired-".concat("c".repeat(32))] }
+          : action
+      )
+    };
+    await expectErrorCode(
+      applyMaintenance(root, tampered, {
+        offline_confirmed: true,
+        plan_hash: tampered.plan_hash
+      }),
+      "MAINTENANCE_PLAN_HASH_MISMATCH"
+    );
+  });
+
   it("refuses a plan minted against a different ledger head", async () => {
     const root = await initializedProject("Head drift");
-    const plan = planMaintenance(await inspectMaintenance(root));
+    const plan = await planMaintenance(root, await inspectMaintenance(root));
     await appendEvent(root, {
       type: "candidate_declared",
       actor: { id: "maintenance-fixture", role: "author" },
       summary: "Event appended after the plan was created."
     });
     await expectErrorCode(
-      applyMaintenance(root, plan, { offline_confirmed: true }),
+      applyMaintenance(root, plan, { offline_confirmed: true, plan_hash: plan.plan_hash }),
       "MAINTENANCE_PLAN_STALE"
     );
   });
@@ -461,7 +483,7 @@ describe("applyMaintenance directory-index quarantine (RS-V1-SUP-017)", () => {
     await mkdir(indexPath, { recursive: true });
     await writeFile(path.join(indexPath, "junk.txt"), "not an index\n", "utf8");
 
-    const plan = planMaintenance(await inspectMaintenance(root));
+    const plan = await planMaintenance(root, await inspectMaintenance(root));
     expect(plan.actions.map((action) => action.kind)).toContain("quarantine_index");
     await applyMaintenance(root, plan, { offline_confirmed: true, plan_hash: plan.plan_hash });
 
@@ -486,21 +508,30 @@ describe("applyMaintenance directory-index quarantine (RS-V1-SUP-017)", () => {
       recursive: true
     });
     const inspection = await inspectMaintenance(root);
+    const base = await planMaintenance(root, inspection);
+    const actions = [
+      {
+        id: "rebuild-index",
+        kind: "rebuild_index" as const,
+        requires_offline: true,
+        targets: 1,
+        target_paths: [".research/cache/ledger-index.json"],
+        target_identities: []
+      }
+    ];
+    const body = {
+      plan_id: base.plan_id,
+      project_id: base.project_id,
+      ledger_head: base.ledger_head,
+      inspected_at: base.inspected_at,
+      actions
+    };
     const forged: MaintenancePlan = {
-      ...planMaintenance(inspection),
-      actions: [
-        {
-          id: "rebuild-index",
-          kind: "rebuild_index",
-          requires_offline: true,
-          targets: 1,
-          target_paths: [".research/cache/ledger-index.json"],
-          target_identities: []
-        }
-      ]
+      ...body,
+      plan_hash: sha256Text(stableJson(body))
     };
     await expectErrorCode(
-      applyMaintenance(root, forged, { offline_confirmed: true }),
+      applyMaintenance(root, forged, { offline_confirmed: true, plan_hash: forged.plan_hash }),
       "INDEX_PATH_NOT_REGULAR"
     );
   });
@@ -513,9 +544,9 @@ describe("applyMaintenance directory-index quarantine (RS-V1-SUP-017)", () => {
     await writeFile(outside, '{"hijack":true}\n', "utf8");
     await symlink(outside, path.join(cacheDir, "ledger-index.json"));
 
-    const plan = planMaintenance(await inspectMaintenance(root));
+    const plan = await planMaintenance(root, await inspectMaintenance(root));
     expect(plan.actions.map((action) => action.kind)).toContain("quarantine_index");
-    await applyMaintenance(root, plan, { offline_confirmed: true });
+    await applyMaintenance(root, plan, { offline_confirmed: true, plan_hash: plan.plan_hash });
 
     // The outside target is never followed or overwritten.
     expect(await readFile(outside, "utf8")).toBe('{"hijack":true}\n');
