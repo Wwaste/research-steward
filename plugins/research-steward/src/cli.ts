@@ -19,7 +19,7 @@ import { runHttpServer } from "./server.js";
 import { packageHandoff } from "./package.js";
 import { errorMessage, writeImmutableFile } from "./utils.js";
 import { runDoctor } from "./doctor.js";
-import { buildPlan, writeLock } from "./planner.js";
+import { buildPlan, writeLock, writePlanAndLock } from "./planner.js";
 import { buildForecast, writeForecast } from "./forecast.js";
 
 interface ParsedArguments {
@@ -134,14 +134,22 @@ async function main(): Promise<void> {
         ...(Object.keys(briefs).length > 0 ? { briefs } : {})
       }
     } as Parameters<typeof buildPlan>[0]);
-    if (parsed.flags.has("write-plan")) {
-      await writeImmutableFile(
-        path.resolve(one(parsed.flags, "write-plan")),
-        `${JSON.stringify(built.plan, null, 2)}\n`
-      );
-    }
-    if (parsed.flags.has("write-lock")) {
-      await writeLock(path.resolve(one(parsed.flags, "write-lock")), built.lock);
+    if (parsed.flags.has("write-plan") || parsed.flags.has("write-lock")) {
+      // Pair the two writes so a lock failure cannot leave a plan without its
+      // lock (RS-V1-SUP-011). Omitting one flag still writes only that one.
+      const planPath = parsed.flags.has("write-plan")
+        ? path.resolve(one(parsed.flags, "write-plan"))
+        : undefined;
+      const lockPath = parsed.flags.has("write-lock")
+        ? path.resolve(one(parsed.flags, "write-lock"))
+        : undefined;
+      if (planPath && lockPath) {
+        await writePlanAndLock(planPath, built.plan, lockPath, built.lock);
+      } else if (planPath) {
+        await writeImmutableFile(planPath, `${JSON.stringify(built.plan, null, 2)}\n`);
+      } else if (lockPath) {
+        await writeLock(lockPath, built.lock);
+      }
     }
     process.stdout.write(`${JSON.stringify(built, null, 2)}\n`);
     return;

@@ -7,6 +7,7 @@
  * semantics via writeImmutableFile().
  */
 
+import { rm } from "node:fs/promises";
 import { z } from "zod";
 import { validateGraph } from "./workflow.js";
 import {
@@ -249,4 +250,38 @@ export function buildPlan(input: BuildPlanInput): { plan: RoundtablePlan; lock: 
 export async function writeLock(filePath: string, lock: WorkflowLock): Promise<void> {
   const validated = WorkflowLockSchema.parse(lock);
   await writeImmutableFile(filePath, `${JSON.stringify(validated, null, 2)}\n`);
+}
+
+/**
+ * Persist a plan and its lock as one unit (RS-V1-SUP-011). Writing them as
+ * two independent writeImmutableFile calls can leave a half-committed pair
+ * when the second fails. This helper:
+ *   1. rejects identical destinations up front;
+ *   2. writes the plan first;
+ *   3. if the lock write fails, removes the plan it just created so the
+ *      caller never sees a plan without its lock.
+ * Existing destinations are still never overwritten: the first EEXIST wins
+ * and nothing is deleted that this call did not create.
+ */
+export async function writePlanAndLock(
+  planPath: string,
+  plan: RoundtablePlan,
+  lockPath: string,
+  lock: WorkflowLock
+): Promise<void> {
+  if (planPath === lockPath) {
+    throw new ResearchStewardError(
+      "PLAN_LOCK_PATH_COLLISION",
+      "The plan and workflow lock must be written to different paths."
+    );
+  }
+  const planBody = `${JSON.stringify(RoundtablePlanSchema.parse(plan), null, 2)}\n`;
+  const lockBody = `${JSON.stringify(WorkflowLockSchema.parse(lock), null, 2)}\n`;
+  await writeImmutableFile(planPath, planBody);
+  try {
+    await writeImmutableFile(lockPath, lockBody);
+  } catch (error) {
+    await rm(planPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }

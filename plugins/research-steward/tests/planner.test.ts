@@ -15,6 +15,7 @@ import {
   buildPlan,
   validatePlanStructure,
   writeLock,
+  writePlanAndLock,
   type BuildPlanInput,
   type WorkflowLock
 } from "../src/planner.js";
@@ -350,6 +351,45 @@ describe("workflow lock", () => {
     const { lock: second } = build("code-science-audit");
     await expect(writeLock(target, second)).rejects.toMatchObject({ code: "EEXIST" });
     expect(JSON.parse(await readFile(target, "utf8"))).toEqual(onDisk);
+  });
+
+  it("writes plan and lock together (RS-V1-SUP-011)", async () => {
+    const dir = await temporaryDirectory();
+    const planPath = path.join(dir, "plan.json");
+    const lockPath = path.join(dir, "workflow.lock.json");
+    const { plan, lock } = build("quick-review");
+
+    await writePlanAndLock(planPath, plan, lockPath, lock);
+
+    expect(RoundtablePlanSchema.parse(JSON.parse(await readFile(planPath, "utf8")))).toEqual(plan);
+    expect(WorkflowLockSchema.parse(JSON.parse(await readFile(lockPath, "utf8")))).toEqual(lock);
+  });
+
+  it("leaves no half-committed plan when the lock write fails", async () => {
+    const dir = await temporaryDirectory();
+    const planPath = path.join(dir, "plan.json");
+    const lockPath = path.join(dir, "workflow.lock.json");
+    const { plan, lock } = build("quick-review");
+    const { lock: existing } = build("figure-audit");
+    await writeLock(lockPath, existing);
+
+    await expect(writePlanAndLock(planPath, plan, lockPath, lock)).rejects.toMatchObject({
+      code: "EEXIST"
+    });
+    // The plan this call would have created is rolled back; the pre-existing
+    // lock is untouched.
+    await expect(readFile(planPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    expect(WorkflowLockSchema.parse(JSON.parse(await readFile(lockPath, "utf8")))).toEqual(existing);
+  });
+
+  it("rejects writing plan and lock to the same path", async () => {
+    const dir = await temporaryDirectory();
+    const same = path.join(dir, "both.json");
+    const { plan, lock } = build("quick-review");
+    await expect(writePlanAndLock(same, plan, same, lock)).rejects.toMatchObject({
+      code: "PLAN_LOCK_PATH_COLLISION"
+    });
+    await expect(readFile(same, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("keeps schemas/workflow-lock.schema.json consistent with the Zod schema", async () => {

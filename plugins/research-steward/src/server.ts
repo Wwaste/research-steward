@@ -22,7 +22,7 @@ import {
 } from "./store.js";
 import { runRoundtable } from "./workflow.js";
 import { runDoctor } from "./doctor.js";
-import { buildPlan, writeLock } from "./planner.js";
+import { buildPlan, writeLock, writePlanAndLock } from "./planner.js";
 import { buildForecast } from "./forecast.js";
 import { packageHandoff } from "./package.js";
 import { EvidenceSchema, FindingSchema } from "./protocol.js";
@@ -597,8 +597,12 @@ export function buildServer(policy: RootPolicy): McpServer {
         const root = await policy.resolveProject(input.project_root);
         const planDestination = await resolveDestinationInside(root, input.plan_path);
         const lockDestination = await resolveDestinationInside(root, input.lock_path);
-        await writeImmutableFile(planDestination, `${JSON.stringify(built.plan, null, 2)}\n`);
-        await writeLock(lockDestination, built.lock);
+        await writePlanAndLock(
+          planDestination,
+          built.plan,
+          lockDestination,
+          built.lock
+        );
         return jsonResult({ ...built, written: true });
       } catch (error) {
         return toolError(error);
