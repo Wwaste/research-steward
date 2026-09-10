@@ -48,7 +48,10 @@ export interface DoctorOptions {
 const PUBLIC_SCHEMA_FILES = [
   "project-manifest.schema.json",
   "research-event.schema.json",
-  "roundtable-plan.schema.json"
+  "roundtable-plan.schema.json",
+  "doctor-report.schema.json",
+  "workflow-lock.schema.json",
+  "forecast.schema.json"
 ] as const;
 
 const MINIMUM_SKILL_DIRECTORIES = 16;

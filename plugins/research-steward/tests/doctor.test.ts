@@ -1,6 +1,7 @@
 import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { DoctorReportSchema, runDoctor, type DoctorReport } from "../src/doctor.js";
 
@@ -27,7 +28,10 @@ async function temporaryDirectory(): Promise<string> {
 const SCHEMA_FILES = [
   "project-manifest.schema.json",
   "research-event.schema.json",
-  "roundtable-plan.schema.json"
+  "roundtable-plan.schema.json",
+  "doctor-report.schema.json",
+  "workflow-lock.schema.json",
+  "forecast.schema.json"
 ];
 
 async function pluginFixture(): Promise<string> {
@@ -506,3 +510,20 @@ describe("doctor fix round 1", () => {
     }
   });
 });
+
+  it("covers every published schema file (CR-M-036)", async () => {
+    const schemasDir = path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "schemas"
+    );
+    const entries = (await readdir(schemasDir)).filter((name) => name.endsWith(".schema.json"));
+    const doctorSource = await readFile(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "doctor.ts"),
+      "utf8"
+    );
+    for (const name of entries) {
+      expect(doctorSource, `doctor PUBLIC_SCHEMA_FILES missing ${name}`).toContain(name);
+    }
+    expect(entries.length).toBeGreaterThanOrEqual(6);
+  });

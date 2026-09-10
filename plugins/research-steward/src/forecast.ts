@@ -7,6 +7,27 @@ import {
   writeImmutableFile
 } from "./utils.js";
 
+/**
+ * Conservative concurrency upper bound (CR-M-035 / RS-V1-SUP-009).
+ *
+ * Layer-width underestimates true schedule width: after a node finishes,
+ * ready nodes from *later* layers can start while leftovers still run.
+ * Example: a→b, a→c, d independent, max_parallel=3 → {b,c,d} run together
+ * even though the widest single layer is 2.
+ *
+ * Exact maximum antichain would be tighter for linear chains; until that is
+ * implemented we use min(max_parallel, node_count), which is always a true
+ * upper bound. Cost if wrong: looser forecast (conservative).
+ */
+function conservativeParallelWidth(plan: RoundtablePlan): number {
+  return Math.min(plan.limits.max_parallel, plan.nodes.length);
+}
+
+function conservativeProviderWidth(plan: RoundtablePlan, adapter: string): number {
+  const count = plan.nodes.filter((node) => node.adapter === adapter).length;
+  return Math.min(plan.limits.max_parallel, Math.max(1, count));
+}
+
 export const FORECAST_VERSION = 1 as const;
 
 /**
@@ -29,12 +50,10 @@ const ProviderForecastSchema = z
   .object({
     nodes: z.number().int().min(1),
     worst_case_invocations: z.number().int().min(1),
-    // Upper bound on how many nodes of this adapter can run in one scheduler
-    // batch: min(plan.max_parallel, count of this adapter in the widest layer)
-    // is not computed per-layer here; we use min(max_parallel, adapter nodes)
-    // which is a true upper bound on simultaneous same-adapter invocations
-    // only when the scheduler never runs two nodes of one adapter past
-    // max_parallel — which is exactly what max_parallel limits (RS-V1-SUP-009).
+    // Conservative upper bound on simultaneous same-adapter invocations:
+    // min(max_parallel, number of nodes using this adapter). Do not use
+    // widest-layer occupancy — after one layer's head finishes, nodes from
+    // later layers plus leftovers can run together (RS-V1-SUP-009 / CR-M-035).
     max_parallel_width: z.number().int().min(1),
     route: z.enum(["subscription_cli", "fake"])
   })
@@ -195,26 +214,6 @@ export function buildForecast(rawPlan: unknown): Forecast {
   > = {};
   const warnings: ForecastWarning[] = [];
   const inspectedAdapters = new Set<string>();
-  // Adapter nodes inside the single widest layer give a tighter per-provider
-  // concurrency bound than the global widest layer alone (RS-V1-SUP-009).
-  const adapterInWidestLayer = new Map<string, number>();
-  let widestDepth = 0;
-  let widestSize = 0;
-  for (const [depth, size] of layerSizes) {
-    if (size > widestSize) {
-      widestSize = size;
-      widestDepth = depth;
-    }
-  }
-  for (const [nodeId, depth] of depths) {
-    if (depth !== widestDepth) continue;
-    const node = plan.nodes.find((candidate) => candidate.id === nodeId);
-    if (!node) continue;
-    adapterInWidestLayer.set(
-      node.adapter,
-      (adapterInWidestLayer.get(node.adapter) ?? 0) + 1
-    );
-  }
   for (const node of plan.nodes) {
     if (!inspectedAdapters.has(node.adapter)) {
       inspectedAdapters.add(node.adapter);
@@ -224,10 +223,7 @@ export function buildForecast(rawPlan: unknown): Forecast {
     const entry = perProvider[node.adapter] ?? {
       nodes: 0,
       worst_case_invocations: 0,
-      max_parallel_width: Math.min(
-        plan.limits.max_parallel,
-        Math.max(1, adapterInWidestLayer.get(node.adapter) ?? 1)
-      ),
+      max_parallel_width: conservativeProviderWidth(plan, node.adapter),
       route: representableRoute(node.adapter)
     };
     entry.nodes += 1;
@@ -278,7 +274,7 @@ export function buildForecast(rawPlan: unknown): Forecast {
     created_at: new Date().toISOString(),
     plan_hash: sha256Text(stableJson(plan)),
     node_count: plan.nodes.length,
-    max_parallel_width: Math.min(plan.limits.max_parallel, widestLayer),
+    max_parallel_width: conservativeParallelWidth(plan),
     worst_case_invocations: worstCaseInvocations,
     fake_invocations: fakeInvocations,
     per_provider: perProvider,

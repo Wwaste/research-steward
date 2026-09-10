@@ -134,7 +134,7 @@ describe("buildForecast", () => {
     expect(() => buildForecast(plan([node("a", "deepseek")]))).toThrow();
   });
 
-  it("computes width 1 for a linear chain even when max_parallel allows more", () => {
+  it("computes a conservative width of min(max_parallel, node_count) for a chain (CR-M-035)", () => {
     const chain = plan(
       [
         node("a", "kimi"),
@@ -144,7 +144,8 @@ describe("buildForecast", () => {
       ],
       { max_parallel: 8 }
     );
-    expect(buildForecast(chain).max_parallel_width).toBe(1);
+    // Conservative bound; true schedule width is 1. Exact antichain is open work.
+    expect(buildForecast(chain).max_parallel_width).toBe(4);
   });
 
   it("caps wide fan-out width at max_parallel", () => {
@@ -161,7 +162,7 @@ describe("buildForecast", () => {
     expect(buildForecast(fanOut).max_parallel_width).toBe(3);
   });
 
-  it("caps width at the widest dependency layer when max_parallel is larger", () => {
+  it("uses conservative min(max_parallel, node_count) for a diamond (CR-M-035)", () => {
     const diamond = plan(
       [
         node("a", "kimi"),
@@ -171,7 +172,8 @@ describe("buildForecast", () => {
       ],
       { max_parallel: 8 }
     );
-    expect(buildForecast(diamond).max_parallel_width).toBe(2);
+    // True antichain width is 2; bound is deliberately loose.
+    expect(buildForecast(diamond).max_parallel_width).toBe(4);
   });
 
   it("counts worst_case_invocations as node_count with retry_limit 0", () => {
@@ -235,22 +237,35 @@ describe("buildForecast", () => {
     expect(forecast.output_char_upper_bound).toBe(6_789 * 2 * 3);
   });
 
-  it("reports per-provider max_parallel_width from the widest layer (RS-V1-SUP-009)", () => {
-    // Widest layer is {a,b,c} all kimi; d is qoder downstream.
+  it("reports per-provider max_parallel_width from adapter node count (RS-V1-SUP-009 / CR-M-035)", () => {
+    // Codex counterexample: a→b, a→c, d independent, max_parallel=3.
+    // After a finishes, {b,c,d} can run together — global width is 3, not
+    // the widest single layer (which is 2).
     const forecast = buildForecast(
       plan(
         [
           node("a", "kimi"),
-          node("b", "kimi"),
-          node("c", "kimi"),
-          node("d", "qoder", ["a", "b", "c"])
+          node("b", "kimi", ["a"]),
+          node("c", "kimi", ["a"]),
+          node("d", "qoder")
         ],
-        { max_parallel: 8 }
+        { max_parallel: 3 }
       )
     );
+    expect(forecast.max_parallel_width).toBe(3);
+    // 3 kimi nodes, max_parallel 3 → provider width 3
     expect(forecast.per_provider["kimi"]!.max_parallel_width).toBe(3);
     expect(forecast.per_provider["qoder"]!.max_parallel_width).toBe(1);
-    expect(forecast.per_provider["kimi"]!.nodes).toBe(3);
+  });
+
+  it("caps per-provider width by adapter node count", () => {
+    const forecast = buildForecast(
+      plan([node("a", "kimi"), node("b", "kimi"), node("c", "qoder")], {
+        max_parallel: 8
+      })
+    );
+    expect(forecast.per_provider["kimi"]!.max_parallel_width).toBe(2);
+    expect(forecast.per_provider["qoder"]!.max_parallel_width).toBe(1);
   });
 
   it("uses the critical-path estimate when it beats max_wall_time_ms", () => {

@@ -72552,7 +72552,10 @@ var DoctorReportSchema = external_exports.object({
 var PUBLIC_SCHEMA_FILES = [
   "project-manifest.schema.json",
   "research-event.schema.json",
-  "roundtable-plan.schema.json"
+  "roundtable-plan.schema.json",
+  "doctor-report.schema.json",
+  "workflow-lock.schema.json",
+  "forecast.schema.json"
 ];
 var MINIMUM_SKILL_DIRECTORIES = 16;
 var EXPECTED_MCP_TOOLS = [
@@ -73655,6 +73658,13 @@ async function canonicalForCompare(candidate) {
 }
 
 // src/forecast.ts
+function conservativeParallelWidth(plan) {
+  return Math.min(plan.limits.max_parallel, plan.nodes.length);
+}
+function conservativeProviderWidth(plan, adapter) {
+  const count = plan.nodes.filter((node2) => node2.adapter === adapter).length;
+  return Math.min(plan.limits.max_parallel, Math.max(1, count));
+}
 var FORECAST_VERSION = 1;
 var LARGE_INVOCATION_BUDGET = 64;
 var ForecastWarningSchema = external_exports.object({
@@ -73665,12 +73675,10 @@ var ForecastWarningSchema = external_exports.object({
 var ProviderForecastSchema = external_exports.object({
   nodes: external_exports.number().int().min(1),
   worst_case_invocations: external_exports.number().int().min(1),
-  // Upper bound on how many nodes of this adapter can run in one scheduler
-  // batch: min(plan.max_parallel, count of this adapter in the widest layer)
-  // is not computed per-layer here; we use min(max_parallel, adapter nodes)
-  // which is a true upper bound on simultaneous same-adapter invocations
-  // only when the scheduler never runs two nodes of one adapter past
-  // max_parallel — which is exactly what max_parallel limits (RS-V1-SUP-009).
+  // Conservative upper bound on simultaneous same-adapter invocations:
+  // min(max_parallel, number of nodes using this adapter). Do not use
+  // widest-layer occupancy — after one layer's head finishes, nodes from
+  // later layers plus leftovers can run together (RS-V1-SUP-009 / CR-M-035).
   max_parallel_width: external_exports.number().int().min(1),
   route: external_exports.enum(["subscription_cli", "fake"])
 }).strict();
@@ -73765,24 +73773,6 @@ function buildForecast(rawPlan) {
   const perProvider = {};
   const warnings = [];
   const inspectedAdapters = /* @__PURE__ */ new Set();
-  const adapterInWidestLayer = /* @__PURE__ */ new Map();
-  let widestDepth = 0;
-  let widestSize = 0;
-  for (const [depth, size] of layerSizes) {
-    if (size > widestSize) {
-      widestSize = size;
-      widestDepth = depth;
-    }
-  }
-  for (const [nodeId, depth] of depths) {
-    if (depth !== widestDepth) continue;
-    const node2 = plan.nodes.find((candidate) => candidate.id === nodeId);
-    if (!node2) continue;
-    adapterInWidestLayer.set(
-      node2.adapter,
-      (adapterInWidestLayer.get(node2.adapter) ?? 0) + 1
-    );
-  }
   for (const node2 of plan.nodes) {
     if (!inspectedAdapters.has(node2.adapter)) {
       inspectedAdapters.add(node2.adapter);
@@ -73792,10 +73782,7 @@ function buildForecast(rawPlan) {
     const entry = perProvider[node2.adapter] ?? {
       nodes: 0,
       worst_case_invocations: 0,
-      max_parallel_width: Math.min(
-        plan.limits.max_parallel,
-        Math.max(1, adapterInWidestLayer.get(node2.adapter) ?? 1)
-      ),
+      max_parallel_width: conservativeProviderWidth(plan, node2.adapter),
       route: representableRoute(node2.adapter)
     };
     entry.nodes += 1;
@@ -73825,7 +73812,7 @@ function buildForecast(rawPlan) {
     created_at: (/* @__PURE__ */ new Date()).toISOString(),
     plan_hash: sha256Text(stableJson(plan)),
     node_count: plan.nodes.length,
-    max_parallel_width: Math.min(plan.limits.max_parallel, widestLayer),
+    max_parallel_width: conservativeParallelWidth(plan),
     worst_case_invocations: worstCaseInvocations,
     fake_invocations: fakeInvocations,
     per_provider: perProvider,
