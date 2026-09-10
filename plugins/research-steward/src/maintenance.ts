@@ -1,11 +1,16 @@
 import type { Dirent } from "node:fs";
-import { cp, lstat, readdir, realpath, rm, stat } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { cp, lstat, readdir, readFile, realpath, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import type { CommittedEvent, VerificationReport } from "./protocol.js";
 import { buildLedgerIndex, readEventsWithIndex, writeLedgerIndex } from "./ledger-index.js";
-import { resolvePrivateExistingInside } from "./paths.js";
+import {
+  ensurePrivateDirectoryInside,
+  resolvePrivateDestinationInside,
+  resolvePrivateExistingInside
+} from "./paths.js";
 import { readEvents, verifyProject } from "./store.js";
-import { ResearchStewardError, errorMessage, stableJson } from "./utils.js";
+import { ResearchStewardError, errorMessage, sha256Text, stableJson } from "./utils.js";
 
 /**
  * Maintenance separates observation from mutation: inspectMaintenance is
@@ -14,23 +19,50 @@ import { ResearchStewardError, errorMessage, stableJson } from "./utils.js";
  * confirmation.
  */
 
+export type IndexEntryKind = "missing" | "file" | "directory" | "symlink" | "other";
+
+export interface TombstoneTarget {
+  relative_path: string;
+  generation: string;
+  owner_sha256: string | null;
+}
+
 export interface MaintenanceInspection {
-  tombstones: { count: number; oldest_age_ms: number | null };
+  project_id: string | null;
+  ledger_head: string | null;
+  inspected_at: string;
+  tombstones: {
+    count: number;
+    oldest_age_ms: number | null;
+    targets: TombstoneTarget[];
+  };
   ledger: { events: number; head_consistent: boolean };
-  index: { present: boolean; stale: boolean };
+  index: { present: boolean; stale: boolean; kind: IndexEntryKind };
   backups: { present: boolean };
 }
 
-export type MaintenanceActionKind = "delete_tombstones" | "rebuild_index" | "none";
+export type MaintenanceActionKind =
+  | "delete_tombstones"
+  | "rebuild_index"
+  | "quarantine_index"
+  | "none";
 
 export interface MaintenanceAction {
   id: string;
   kind: MaintenanceActionKind;
   requires_offline: boolean;
   targets: number;
+  target_paths: string[];
+  target_identities: TombstoneTarget[];
+  detail?: { index_kind: IndexEntryKind; summary: string };
 }
 
 export interface MaintenancePlan {
+  plan_id: string;
+  plan_hash: string;
+  project_id: string | null;
+  ledger_head: string | null;
+  inspected_at: string;
   actions: MaintenanceAction[];
 }
 
@@ -63,9 +95,36 @@ const PROTOCOL_TOMBSTONE_NAME =
   /^\.(?:event|render|resource-[a-z0-9][a-z0-9-]{0,63}|packet-[a-z0-9][a-z0-9-]{0,63})-lock\.retired-[a-f0-9]{32}$/;
 const RUN_LEASE_TOMBSTONE_NAME = /^\.lease\.retired-[a-f0-9]{32}$/;
 
-interface TombstoneRecord {
-  relative_path: string;
+interface TombstoneRecord extends TombstoneTarget {
   mtime_ms: number;
+}
+
+const GENERATION_FROM_NAME = /retired-([a-f0-9]{32})$/;
+
+async function tombstoneIdentity(
+  absolute: string,
+  relativePath: string
+): Promise<TombstoneTarget | null> {
+  const info = await lstat(absolute);
+  if (!info.isDirectory()) return null;
+  const name = path.basename(absolute);
+  const generationMatch = GENERATION_FROM_NAME.exec(name);
+  if (!generationMatch) return null;
+  let ownerSha: string | null = null;
+  try {
+    const ownerBytes = await readFile(path.join(absolute, "owner.json"));
+    ownerSha = sha256Text(ownerBytes.toString("utf8"));
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // Missing owner is representable; a non-file owner.json still keeps the
+    // tombstone in the exact-target set so apply can refuse or skip it.
+    if (code !== "ENOENT" && code !== "EISDIR" && code !== "EACCES") return null;
+  }
+  return {
+    relative_path: relativePath,
+    generation: generationMatch[1]!,
+    owner_sha256: ownerSha
+  };
 }
 
 function isEnoent(error: unknown): boolean {
@@ -83,8 +142,12 @@ async function scanTombstones(root: string): Promise<TombstoneRecord[]> {
   }
   for (const entry of await readdir(researchDir, { withFileTypes: true })) {
     if (!entry.isDirectory() || !PROTOCOL_TOMBSTONE_NAME.test(entry.name)) continue;
-    const info = await lstat(path.join(researchDir, entry.name));
-    records.push({ relative_path: `.research/${entry.name}`, mtime_ms: info.mtimeMs });
+    const relativePath = `.research/${entry.name}`;
+    const absolute = path.join(researchDir, entry.name);
+    const identity = await tombstoneIdentity(absolute, relativePath);
+    if (!identity) continue;
+    const info = await lstat(absolute);
+    records.push({ ...identity, mtime_ms: info.mtimeMs });
   }
   let runEntries: Dirent[] = [];
   try {
@@ -98,14 +161,64 @@ async function scanTombstones(root: string): Promise<TombstoneRecord[]> {
     const runDir = path.join(researchDir, "runs", runEntry.name);
     for (const entry of await readdir(runDir, { withFileTypes: true })) {
       if (!entry.isDirectory() || !RUN_LEASE_TOMBSTONE_NAME.test(entry.name)) continue;
-      const info = await lstat(path.join(runDir, entry.name));
-      records.push({
-        relative_path: `.research/runs/${runEntry.name}/${entry.name}`,
-        mtime_ms: info.mtimeMs
-      });
+      const relativePath = `.research/runs/${runEntry.name}/${entry.name}`;
+      const absolute = path.join(runDir, entry.name);
+      const identity = await tombstoneIdentity(absolute, relativePath);
+      if (!identity) continue;
+      const info = await lstat(absolute);
+      records.push({ ...identity, mtime_ms: info.mtimeMs });
     }
   }
   return records;
+}
+
+async function classifyIndexPath(root: string): Promise<{
+  present: boolean;
+  kind: IndexEntryKind;
+  absolute: string | null;
+}> {
+  // Resolve the parent directory through the private path policy, then lstat
+  // the leaf without realpath: the leaf may be a symlink that
+  // resolvePrivateExistingInside would refuse before we could classify it.
+  let parent: string;
+  try {
+    parent = await resolvePrivateExistingInside(root, ".research/cache");
+  } catch (error) {
+    if (isEnoent(error)) return { present: false, kind: "missing", absolute: null };
+    throw error;
+  }
+  const absolute = path.join(parent, "ledger-index.json");
+  let info;
+  try {
+    info = await lstat(absolute);
+  } catch (error) {
+    if (isEnoent(error)) return { present: false, kind: "missing", absolute: null };
+    throw error;
+  }
+  if (info.isSymbolicLink()) return { present: true, kind: "symlink", absolute };
+  if (info.isDirectory()) return { present: true, kind: "directory", absolute };
+  if (info.isFile()) return { present: true, kind: "file", absolute };
+  return { present: true, kind: "other", absolute };
+}
+
+async function projectIdentity(
+  root: string
+): Promise<{ project_id: string | null; ledger_head: string | null }> {
+  try {
+    const manifestPath = await resolvePrivateExistingInside(root, ".research/manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { project_id?: string };
+    const headPath = await resolvePrivateExistingInside(root, ".research/ledger-head.json");
+    const head = JSON.parse(await readFile(headPath, "utf8")) as {
+      last_event_hash?: string | null;
+    };
+    return {
+      project_id: typeof manifest.project_id === "string" ? manifest.project_id : null,
+      ledger_head: typeof head.last_event_hash === "string" ? head.last_event_hash : null
+    };
+  } catch (error) {
+    if (isEnoent(error)) return { project_id: null, ledger_head: null };
+    throw error;
+  }
 }
 
 export async function inspectMaintenance(root: string): Promise<MaintenanceInspection> {
@@ -115,6 +228,7 @@ export async function inspectMaintenance(root: string): Promise<MaintenanceInspe
     tombstones.length === 0
       ? null
       : Math.max(0, ...tombstones.map((record) => now - record.mtime_ms));
+  const identity = await projectIdentity(root);
 
   let eventFileCount = 0;
   try {
@@ -133,23 +247,20 @@ export async function inspectMaintenance(root: string): Promise<MaintenanceInspe
     headConsistent = false;
   }
 
-  let indexPresent = false;
-  try {
-    // Any existing entry counts as present, even a non-file: readEventsWithIndex
-    // reports such an entry as stale, which keeps the rebuild action reachable.
-    await resolvePrivateExistingInside(root, ".research/cache/ledger-index.json");
-    indexPresent = true;
-  } catch (error) {
-    if (!isEnoent(error)) throw error;
-  }
+  const indexEntry = await classifyIndexPath(root);
   let indexStale = false;
-  if (indexPresent) {
+  if (indexEntry.present && indexEntry.kind === "file") {
     try {
       await readEventsWithIndex(root);
     } catch (error) {
       indexStale =
         error instanceof ResearchStewardError && error.code === "STALE_LEDGER_INDEX";
     }
+  } else if (indexEntry.present) {
+    // A non-regular entry at the cache path is never a valid index; quarantine
+    // must stay reachable even when the private path policy rejects the leaf
+    // before readEventsWithIndex can classify it.
+    indexStale = true;
   }
 
   let backupsPresent = false;
@@ -161,11 +272,30 @@ export async function inspectMaintenance(root: string): Promise<MaintenanceInspe
   }
 
   return {
-    tombstones: { count: tombstones.length, oldest_age_ms: oldestAgeMs },
+    project_id: identity.project_id,
+    ledger_head: identity.ledger_head,
+    inspected_at: new Date().toISOString(),
+    tombstones: {
+      count: tombstones.length,
+      oldest_age_ms: oldestAgeMs,
+      targets: tombstones.map(({ relative_path, generation, owner_sha256 }) => ({
+        relative_path,
+        generation,
+        owner_sha256
+      }))
+    },
     ledger: { events: eventFileCount, head_consistent: headConsistent },
-    index: { present: indexPresent, stale: indexStale },
+    index: {
+      present: indexEntry.present,
+      stale: indexStale,
+      kind: indexEntry.kind
+    },
     backups: { present: backupsPresent }
   };
+}
+
+function planBodyHash(plan: Omit<MaintenancePlan, "plan_id" | "plan_hash">): string {
+  return sha256Text(stableJson(plan));
 }
 
 export function planMaintenance(inspection: MaintenanceInspection): MaintenancePlan {
@@ -175,21 +305,56 @@ export function planMaintenance(inspection: MaintenanceInspection): MaintenanceP
       id: "delete-tombstones",
       kind: "delete_tombstones",
       requires_offline: true,
-      targets: inspection.tombstones.count
+      targets: inspection.tombstones.count,
+      target_paths: inspection.tombstones.targets.map((target) => target.relative_path),
+      target_identities: inspection.tombstones.targets
     });
   }
   if (inspection.index.present && inspection.index.stale) {
-    actions.push({
-      id: "rebuild-index",
-      kind: "rebuild_index",
-      requires_offline: true,
-      targets: 1
-    });
+    if (inspection.index.kind === "file") {
+      actions.push({
+        id: "rebuild-index",
+        kind: "rebuild_index",
+        requires_offline: true,
+        targets: 1,
+        target_paths: [".research/cache/ledger-index.json"],
+        target_identities: []
+      });
+    } else {
+      // A non-regular entry at the index path must never be overwritten in
+      // place: quarantine it aside first, then rebuild a real cache.
+      actions.push({
+        id: "quarantine-index",
+        kind: "quarantine_index",
+        requires_offline: true,
+        targets: 1,
+        target_paths: [".research/cache/ledger-index.json"],
+        target_identities: [],
+        detail: {
+          index_kind: inspection.index.kind,
+          summary: `ledger-index.json is a ${inspection.index.kind}, not a regular file`
+        }
+      });
+    }
   }
   if (actions.length === 0) {
-    actions.push({ id: "no-op", kind: "none", requires_offline: false, targets: 0 });
+    actions.push({
+      id: "no-op",
+      kind: "none",
+      requires_offline: false,
+      targets: 0,
+      target_paths: [],
+      target_identities: []
+    });
   }
-  return { actions };
+  const body = {
+    project_id: inspection.project_id,
+    ledger_head: inspection.ledger_head,
+    inspected_at: inspection.inspected_at,
+    actions
+  };
+  const plan_id = randomUUID();
+  return { plan_id, plan_hash: planBodyHash(body), ...body };
 }
 
 async function deleteTombstones(
@@ -239,10 +404,25 @@ async function deleteTombstones(
   return { deleted, skipped };
 }
 
+function identitiesMatch(
+  planned: readonly TombstoneTarget[],
+  current: readonly TombstoneTarget[]
+): boolean {
+  if (planned.length !== current.length) return false;
+  const byPath = new Map(current.map((target) => [target.relative_path, target]));
+  for (const target of planned) {
+    const found = byPath.get(target.relative_path);
+    if (!found) return false;
+    if (found.generation !== target.generation) return false;
+    if (found.owner_sha256 !== target.owner_sha256) return false;
+  }
+  return true;
+}
+
 export async function applyMaintenance(
   root: string,
   plan: MaintenancePlan,
-  options: { offline_confirmed: boolean }
+  options: { offline_confirmed: boolean; plan_hash?: string }
 ): Promise<MaintenanceApplyResult> {
   if (options.offline_confirmed !== true) {
     throw new ResearchStewardError(
@@ -251,16 +431,44 @@ export async function applyMaintenance(
         "after every writer for this project has stopped."
     );
   }
+  if (options.plan_hash !== undefined && options.plan_hash !== plan.plan_hash) {
+    throw new ResearchStewardError(
+      "MAINTENANCE_PLAN_HASH_MISMATCH",
+      "The supplied plan_hash does not match this plan; re-inspect and re-plan before applying."
+    );
+  }
+  const identity = await projectIdentity(root);
+  if (
+    plan.project_id !== identity.project_id ||
+    plan.ledger_head !== identity.ledger_head
+  ) {
+    throw new ResearchStewardError(
+      "MAINTENANCE_PLAN_STALE",
+      "The project identity or ledger head changed since the plan was created; " +
+        "re-inspect and re-plan before applying."
+    );
+  }
+
   const results: MaintenanceActionResult[] = [];
   for (const action of plan.actions) {
     switch (action.kind) {
       case "delete_tombstones": {
         const records = await scanTombstones(root);
-        if (records.length !== action.targets) {
+        if (
+          records.length !== action.targets ||
+          !identitiesMatch(
+            action.target_identities,
+            records.map(({ relative_path, generation, owner_sha256 }) => ({
+              relative_path,
+              generation,
+              owner_sha256
+            }))
+          )
+        ) {
           throw new ResearchStewardError(
             "MAINTENANCE_PLAN_STALE",
             `The plan names ${action.targets} tombstone target(s) but the current scan ` +
-              `found ${records.length}; re-inspect and re-plan before applying.`
+              `does not match that exact path/generation/owner set; re-inspect and re-plan before applying.`
           );
         }
         const { deleted, skipped } = await deleteTombstones(root, records);
@@ -268,6 +476,42 @@ export async function applyMaintenance(
         break;
       }
       case "rebuild_index": {
+        const entry = await classifyIndexPath(root);
+        if (entry.present && entry.kind !== "file") {
+          throw new ResearchStewardError(
+            "INDEX_PATH_NOT_REGULAR",
+            `Refusing to rebuild the ledger index: the path is a ${entry.kind}. ` +
+              "Use a quarantine_index action first."
+          );
+        }
+        await writeLedgerIndex(root, await buildLedgerIndex(root));
+        results.push({ id: action.id, kind: action.kind, completed: 1, skipped: 0 });
+        break;
+      }
+      case "quarantine_index": {
+        const entry = await classifyIndexPath(root);
+        if (entry.present && entry.kind === "file") {
+          throw new ResearchStewardError(
+            "MAINTENANCE_PLAN_STALE",
+            "The index path is now a regular file; re-inspect before quarantining."
+          );
+        }
+        if (entry.absolute && entry.present) {
+          await ensurePrivateDirectoryInside(root, ".research/cache");
+          const quarantineRelative = `.research/cache/ledger-index.json.quarantined-${plan.plan_id}`;
+          const quarantineAbsolute = await resolvePrivateDestinationInside(
+            root,
+            quarantineRelative
+          );
+          try {
+            await rename(entry.absolute, quarantineAbsolute);
+          } catch (error) {
+            throw new ResearchStewardError(
+              "INDEX_QUARANTINE_FAILED",
+              `Quarantining the non-regular ledger index failed: ${errorMessage(error)}`
+            );
+          }
+        }
         await writeLedgerIndex(root, await buildLedgerIndex(root));
         results.push({ id: action.id, kind: action.kind, completed: 1, skipped: 0 });
         break;
