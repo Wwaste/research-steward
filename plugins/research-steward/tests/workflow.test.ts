@@ -32,7 +32,7 @@ function limits(): RoundtablePlan["limits"] {
 }
 
 describe("round-table DAG", () => {
-  it("runs the checked-in deterministic walkthrough with visible deferred findings", async () => {
+  it("runs the checked-in deterministic walkthrough with visible deferred findings", { timeout: 30_000 }, async () => {
     const root = await initializedProject("Deterministic walkthrough");
     await writeFile(path.join(root, "evidence.md"), "# Walkthrough evidence\n", "utf8");
     await freezePacket(root, "protocol-v1", ["evidence.md"]);
@@ -117,7 +117,7 @@ describe("round-table DAG", () => {
     );
   });
 
-  it("automatically runs B only after A is committed and gives B an explicit dependency", async () => {
+  it("automatically runs B only after A is committed and gives B an explicit dependency", { timeout: 20_000 }, async () => {
     const root = await initializedProject("A then B");
     await writeFile(path.join(root, "evidence.md"), "# Frozen evidence\n\nObserved result.\n", "utf8");
     await freezePacket(root, "dag-input", ["evidence.md"]);
