@@ -32,9 +32,20 @@ describe("finding lifecycle (Task 2.6)", () => {
   it("rejects illegal transitions", () => {
     const f = finding();
     const deferred = transitionFinding(f, "deferred", {});
-    expect(() => transitionFinding(deferred, "fixed", {
-      adjudicator: "x",
-      remediation_evidence: "y"
-    })).not.toThrow();
+    // CR-M-049: deferred cannot jump to fixed; it must go back to open first.
+    expect(() =>
+      transitionFinding(deferred, "fixed", {
+        adjudicator: "x",
+        remediation_evidence: "y"
+      })
+    ).toThrowError(expect.objectContaining({ code: "FINDING_INVALID_TRANSITION" }));
+    const reopened = transitionFinding(deferred, "open", {});
+    expect(reopened.state).toBe("open");
+    expect(transitionFinding(finding(), "obsolete", {}).state).toBe("obsolete");
+    // obsolete is terminal
+    const obsolete = transitionFinding(finding(), "obsolete", {});
+    expect(() =>
+      transitionFinding(obsolete, "open", {})
+    ).toThrowError(expect.objectContaining({ code: "FINDING_INVALID_TRANSITION" }));
   });
 });

@@ -23,6 +23,7 @@ import {
   ensurePrivateDirectoryInside,
   resolvePrivateDestinationInside
 } from "./paths.js";
+import { makeInvocationId } from "./invocations.js";
 import {
   ResearchStewardError,
   atomicWriteFile,
@@ -484,6 +485,8 @@ async function runOneNode(
   const prompt = buildPrompt(plan, node, packetBundle, completed);
   let lastError: unknown;
   let attempts = 0;
+  const attemptEvidence: Array<Record<string, unknown>> = [];
+  let lastRetryDecision: { reason: string; backoff_ms?: number } | null = null;
   for (let attempt = 0; attempt <= plan.limits.retry_limit; attempt += 1) {
     const remainingMs = deadlineAt - Date.now();
     if (remainingMs < 1_000) {
@@ -527,6 +530,23 @@ async function runOneNode(
           : "unknown";
       const policy = policyFromPlanLimits(plan.limits.retry_limit as 0 | 1 | 2);
       const decision = decideRetry(failureClass, attempts, policy);
+      lastRetryDecision = { reason: decision.reason, backoff_ms: decision.backoff_ms };
+      const errorDetails =
+        error instanceof ResearchStewardError ? error.details : {};
+      attemptEvidence.push({
+        attempt: attempts,
+        invocation_id: makeInvocationId(runId, node.id, attempts),
+        failure_class: failureClass,
+        retry: decision.retry,
+        retry_reason: decision.reason,
+        backoff_ms: decision.backoff_ms ?? 0,
+        error_code: error instanceof ResearchStewardError ? error.code : "UNKNOWN",
+        stdout_hash: errorDetails["stdout_hash"],
+        stderr_hash: errorDetails["stderr_hash"]
+      });
+      if (decision.backoff_ms !== undefined && decision.retry) {
+        await sleep(decision.backoff_ms);
+      }
       if (!decision.retry) {
         break;
       }
@@ -643,11 +663,19 @@ async function runOneNode(
     uncertainties: ["Provider output was not accepted as a valid contribution."],
     metadata: {
       node_id: node.id,
+      attempts,
       error_code: providerError?.code ?? "PROVIDER_RUN_FAILED",
+      attempt_evidence: attemptEvidence,
+      last_retry_reason: lastRetryDecision?.reason ?? null,
+      last_backoff_ms: lastRetryDecision?.backoff_ms ?? 0,
       ...(providerError?.details ?? {}),
       ...(node.blind_group ? { blind_group: node.blind_group } : {})
     }
   });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export async function runRoundtable(

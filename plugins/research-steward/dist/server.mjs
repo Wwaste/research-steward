@@ -72141,6 +72141,42 @@ function decideRetry(failure, attempt, policy) {
   }
 }
 
+// src/invocations.ts
+import { createHash as createHash2 } from "node:crypto";
+var INVOCATION_STATES = [
+  "started",
+  "finished",
+  "unknown",
+  "cancel_requested",
+  "cancelled"
+];
+var InvocationRecordSchema = external_exports.object({
+  invocation_version: external_exports.literal(1),
+  invocation_id: external_exports.string().min(1).max(100),
+  run_id: external_exports.string().min(1).max(100),
+  node_id: external_exports.string().min(1).max(100),
+  attempt: external_exports.number().int().min(1),
+  state: external_exports.enum(INVOCATION_STATES),
+  provider: external_exports.string().min(1).max(64),
+  started_at: external_exports.string().datetime({ offset: true }),
+  finished_at: external_exports.string().datetime({ offset: true }).nullable().default(null),
+  failure_class: external_exports.enum([
+    "quota",
+    "auth",
+    "model_not_found",
+    "timeout",
+    "transport",
+    "invalid_output",
+    "cancelled",
+    "unknown"
+  ]).nullable().default(null),
+  /** Never raw provider output — hash only. */
+  stdout_sha256: external_exports.string().regex(/^[a-f0-9]{64}$/).nullable().default(null)
+}).strict();
+function makeInvocationId(run_id, node_id, attempt) {
+  return createHash2("sha256").update(`${run_id}|${node_id}|${attempt}`, "utf8").digest("hex").slice(0, 32);
+}
+
 // src/workflow.ts
 var RUN_LEASE_STALE_MS = 3e4;
 var RUN_LEASE_HEARTBEAT_MS = 5e3;
@@ -72494,6 +72530,8 @@ async function runOneNode(root, plan, runId, node2, packetBundle, packetHash, co
   const prompt = buildPrompt(plan, node2, packetBundle, completed);
   let lastError;
   let attempts = 0;
+  const attemptEvidence = [];
+  let lastRetryDecision = null;
   for (let attempt = 0; attempt <= plan.limits.retry_limit; attempt += 1) {
     const remainingMs = deadlineAt - Date.now();
     if (remainingMs < 1e3) {
@@ -72532,6 +72570,22 @@ async function runOneNode(root, plan, runId, node2, packetBundle, packetHash, co
       const failureClass = error61 instanceof ResearchStewardError && typeof error61.details["failure_class"] === "string" ? error61.details["failure_class"] : "unknown";
       const policy = policyFromPlanLimits(plan.limits.retry_limit);
       const decision = decideRetry(failureClass, attempts, policy);
+      lastRetryDecision = { reason: decision.reason, backoff_ms: decision.backoff_ms };
+      const errorDetails = error61 instanceof ResearchStewardError ? error61.details : {};
+      attemptEvidence.push({
+        attempt: attempts,
+        invocation_id: makeInvocationId(runId, node2.id, attempts),
+        failure_class: failureClass,
+        retry: decision.retry,
+        retry_reason: decision.reason,
+        backoff_ms: decision.backoff_ms ?? 0,
+        error_code: error61 instanceof ResearchStewardError ? error61.code : "UNKNOWN",
+        stdout_hash: errorDetails["stdout_hash"],
+        stderr_hash: errorDetails["stderr_hash"]
+      });
+      if (decision.backoff_ms !== void 0 && decision.retry) {
+        await sleep2(decision.backoff_ms);
+      }
       if (!decision.retry) {
         break;
       }
@@ -72632,11 +72686,18 @@ async function runOneNode(root, plan, runId, node2, packetBundle, packetHash, co
     uncertainties: ["Provider output was not accepted as a valid contribution."],
     metadata: {
       node_id: node2.id,
+      attempts,
       error_code: providerError?.code ?? "PROVIDER_RUN_FAILED",
+      attempt_evidence: attemptEvidence,
+      last_retry_reason: lastRetryDecision?.reason ?? null,
+      last_backoff_ms: lastRetryDecision?.backoff_ms ?? 0,
       ...providerError?.details ?? {},
       ...node2.blind_group ? { blind_group: node2.blind_group } : {}
     }
   });
+}
+function sleep2(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 async function runRoundtable(root, rawPlan, requestedRunId) {
   const plan = RoundtablePlanSchema.parse(rawPlan);
