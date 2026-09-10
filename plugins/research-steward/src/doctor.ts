@@ -300,7 +300,20 @@ async function checkProjectRoot(projectRoot: string | undefined): Promise<Doctor
     };
   }
 
-  const probe = path.join(projectRoot, `.research-steward-doctor-${process.pid}-${randomUUID()}.tmp`);
+  // Probe lives in the project root (not .research/) so it works before the
+  // workspace exists; it is always removed below. Residue from an interrupted
+  // run is swept first (CR-M-026/027).
+  const probePrefix = ".research-steward-doctor-";
+  try {
+    for (const name of await readdir(projectRoot)) {
+      if (name.startsWith(probePrefix) && name.endsWith(".tmp")) {
+        await rm(path.join(projectRoot, name), { force: true }).catch(() => undefined);
+      }
+    }
+  } catch {
+    // Unreadable root is reported by the checks above; sweep is best-effort.
+  }
+  const probe = path.join(projectRoot, `${probePrefix}${process.pid}-${randomUUID()}.tmp`);
   try {
     await writeFile(probe, "doctor write probe\n", { flag: "wx", mode: 0o600 });
   } catch {

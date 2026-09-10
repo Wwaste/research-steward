@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -169,6 +169,30 @@ describe("doctor report", () => {
 
     expect(check(report, "project.root").status).toBe("fail");
     expect(report.overall).toBe("fail");
+  });
+
+  it("sweeps residual doctor probe files from an interrupted run (CR-M-026)", async () => {
+    const projectRoot = await temporaryDirectory();
+    const residue = path.join(
+      projectRoot,
+      `.research-steward-doctor-${process.pid}-interrupted.tmp`
+    );
+    await writeFile(residue, "leftover\n", "utf8");
+
+    const report = await runDoctor({
+      nodeVersion: "v22.4.0",
+      pluginRoot: await pluginFixture(),
+      projectRoot,
+      env: {},
+      execProbe: allFound
+    });
+
+    expect(check(report, "project.root").status).toBe("pass");
+    await expect(readFile(residue, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    const leftovers = (await readdir(projectRoot)).filter((name) =>
+      name.startsWith(".research-steward-doctor-") && name.endsWith(".tmp")
+    );
+    expect(leftovers).toEqual([]);
   });
 
   it("fails project.root when the protocol manifest is corrupt", async () => {

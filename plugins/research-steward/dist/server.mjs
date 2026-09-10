@@ -72850,7 +72850,16 @@ async function checkProjectRoot(projectRoot) {
       remediation: "Create the project directory or fix its permissions before running Research Steward."
     };
   }
-  const probe = path6.join(projectRoot, `.research-steward-doctor-${process.pid}-${randomUUID5()}.tmp`);
+  const probePrefix = ".research-steward-doctor-";
+  try {
+    for (const name of await readdir2(projectRoot)) {
+      if (name.startsWith(probePrefix) && name.endsWith(".tmp")) {
+        await rm5(path6.join(projectRoot, name), { force: true }).catch(() => void 0);
+      }
+    }
+  } catch {
+  }
+  const probe = path6.join(projectRoot, `${probePrefix}${process.pid}-${randomUUID5()}.tmp`);
   try {
     await writeFile(probe, "doctor write probe\n", { flag: "wx", mode: 384 });
   } catch {
@@ -74813,8 +74822,9 @@ function buildServer(policy) {
         project_root: external_exports.string().min(1).max(4096).optional()
       },
       annotations: {
-        // Doctor writes a reversible probe file under .research/ when a project
-        // root is supplied (RS-V1-SUP-010); it is idempotent, not read-only.
+        // Doctor writes (and sweeps) a reversible probe file in the project
+        // root when one is supplied (RS-V1-SUP-010 / CR-M-027); idempotent,
+        // not read-only.
         readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: true,
