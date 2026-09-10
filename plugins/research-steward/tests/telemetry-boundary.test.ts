@@ -1,5 +1,6 @@
 import {
   chmod,
+  link,
   lstat,
   mkdir,
   readFile,
@@ -166,6 +167,20 @@ describe("redact on Windows path shapes", () => {
     expect(redact("plain harmless value")).toBe("plain harmless value");
   });
 
+  it("redacts /root and private temp prefixes (CR-M-006)", () => {
+    expect(redact("/root/secrets/key.pem")).toBe("<redacted>/key.pem");
+    expect(redact("/root/secrets/key.pem")).not.toContain("secrets");
+    expect(redact("/tmp/private-run/notes.txt")).toBe("<redacted>/notes.txt");
+    expect(redact("/var/tmp/private-run/notes.txt")).toBe("<redacted>/notes.txt");
+    expect(redact("/tmp/private-run/notes.txt")).not.toContain("private-run");
+  });
+
+  it("redacts forward-slash UNC paths (CR-M-012)", () => {
+    const forwardUnc = "//fileserver/Users/bob/secret";
+    expect(redact(forwardUnc)).not.toContain("fileserver");
+    expect(redact(forwardUnc)).not.toContain("bob");
+  });
+
   it("keeps Windows home paths out of the snapshot, the jsonl line, and the OTLP export", async () => {
     const directory = await temporaryDirectory();
     const recorder = new TelemetryRecorder({ directory });
@@ -191,5 +206,22 @@ describe("redact on Windows path shapes", () => {
       expect(surface).not.toContain("fileserver");
       expect(surface).toContain("<redacted>");
     }
+  });
+});
+
+describe("telemetry hardlink and parent guards", () => {
+  it("refuses a hardlinked spans.jsonl (nlink > 1, CR-M-008)", async () => {
+    const directory = await temporaryDirectory();
+    const outside = await temporaryDirectory();
+    const secret = path.join(outside, "id_rsa");
+    await writeFile(secret, "PRIVATE\n", { mode: 0o600 });
+    await link(secret, path.join(directory, "spans.jsonl"));
+
+    const recorder = new TelemetryRecorder({ directory });
+    await expectErrorCode(
+      recorder.record(spanInput({ "research.status": "s" })),
+      "TELEMETRY_PATH_REJECTED"
+    );
+    expect(await readFile(secret, "utf8")).toBe("PRIVATE\n");
   });
 });

@@ -1,5 +1,12 @@
 import { constants as fsConstants, type Stats } from "node:fs";
-import { chmod, lstat, mkdir, open, type FileHandle } from "node:fs/promises";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  open,
+  realpath,
+  type FileHandle
+} from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { ResearchStewardError, errorMessage, writeImmutableFile } from "./utils.js";
@@ -47,12 +54,18 @@ const REDACTION_PATTERNS: readonly RegExp[] = [
   // absorbs the \\?\ and \\.\ device prefixes (including \\?\UNC\), which
   // would otherwise be read as the host and leave the user name behind.
   /\\{2}(?:[?.]\\(?:UNC\\)?)?[^\\/\s"']+(?:\\+[^\\/\s"']+){2}/g,
+  // //host/share/user/... (forward-slash UNC) (CR-M-012).
+  /\/{2}(?:[?.]\/(?:UNC\/)?)?[^\\/\s"']+(?:\/+[^\\/\s"']+){2}/g,
   // C:\Users\Name, C:/Users/Name, \Users\Name. A drive letter or a
   // backslash is required so a plain POSIX "/users/..." URL path is left to
   // the case-sensitive pattern below.
   /(?:[A-Za-z]:[\\/]+|\\+)Users[\\/]+[^\\/\s"']+/gi,
   /\/Users\/[^/\s"']+/g,
-  /\/home\/[^/\s"']+/g
+  /\/home\/[^/\s"']+/g,
+  // /root/... is the Linux superuser home; /tmp and /var/tmp hold private
+  // scratch that must not enter traces (RS-V1-SUP-019 / CR-M-006).
+  /\/root\/[^/\s"']+/g,
+  /\/(?:var\/)?tmp\/[^/\s"']+/gi
 ];
 
 // Known boundary: patterns run sequentially over the already-rewritten
@@ -226,24 +239,50 @@ function foreignOwned(info: Stats): boolean {
 /**
  * Create the trace directory owner-only, and refuse a pre-existing one that is
  * a symlink, is owned by somebody else, or cannot be tightened to 0700.
+ * Ancestors are realpath-checked so a symlinked parent cannot redirect the
+ * write outside the intended tree (CR-M-007).
  */
 async function ensureOwnerOnlyDirectory(directory: string): Promise<void> {
-  await mkdir(directory, { recursive: true, mode: TRACE_DIRECTORY_MODE });
+  // Canonicalize ancestors first: mkdir/lstat/open would otherwise follow a
+  // symlink parent silently.
+  let canonicalParent: string;
+  try {
+    canonicalParent = await realpath(path.dirname(directory));
+  } catch (error) {
+    throw pathRejected(
+      `Telemetry directory parent is not a real directory: ${redact(directory)}`,
+      { reason: errorMessage(error) }
+    );
+  }
+  const leaf = path.basename(directory);
+  const canonicalDirectory = path.join(canonicalParent, leaf);
+  await mkdir(canonicalDirectory, { recursive: true, mode: TRACE_DIRECTORY_MODE });
   // lstat, not stat: a symlink aimed at a real directory has to be rejected,
   // not quietly resolved.
-  const info = await lstat(directory);
+  const info = await lstat(canonicalDirectory);
   if (!info.isDirectory()) {
-    throw pathRejected(`Telemetry directory is not a directory: ${redact(directory)}`);
+    throw pathRejected(
+      `Telemetry directory is not a directory: ${redact(canonicalDirectory)}`
+    );
   }
   if (foreignOwned(info)) {
-    throw pathRejected(`Telemetry directory is owned by another user: ${redact(directory)}`);
+    throw pathRejected(
+      `Telemetry directory is owned by another user: ${redact(canonicalDirectory)}`
+    );
   }
   if ((info.mode & GROUP_AND_OTHER_BITS) !== 0) {
     try {
-      await chmod(directory, TRACE_DIRECTORY_MODE);
+      // Open then fchmod so a directory swapped for a symlink between lstat
+      // and chmod cannot retarget the mode change (CR-M-009).
+      const handle = await open(canonicalDirectory, fsConstants.O_RDONLY);
+      try {
+        await handle.chmod(TRACE_DIRECTORY_MODE);
+      } finally {
+        await handle.close();
+      }
     } catch (error) {
       throw pathRejected(
-        `Telemetry directory is group- or world-accessible and could not be tightened: ${redact(directory)}`,
+        `Telemetry directory is group- or world-accessible and could not be tightened: ${redact(canonicalDirectory)}`,
         { mode: (info.mode & 0o777).toString(8), reason: errorMessage(error) }
       );
     }
@@ -270,7 +309,7 @@ async function openOwnerOnlyAppendHandle(tracePath: string): Promise<FileHandle>
     const code = (error as NodeJS.ErrnoException).code;
     // A leaf swapped for a symlink after the lstat surfaces as ELOOP from
     // O_NOFOLLOW; report it as the rejection it is rather than as an errno.
-    if (code === "ELOOP" || code === "EMLINK" || code === "ENXIO") {
+    if (code === "ELOOP" || code === "EMLINK" || code === "ENXIO" || code === "EISDIR" || code === "ENOTDIR") {
       throw pathRejected(`Telemetry trace path is not a regular file: ${redact(tracePath)}`, {
         reason: errorMessage(error)
       });
@@ -283,6 +322,13 @@ async function openOwnerOnlyAppendHandle(tracePath: string): Promise<FileHandle>
     const info = await handle.stat();
     if (!info.isFile()) {
       throw pathRejected(`Telemetry trace path is not a regular file: ${redact(tracePath)}`);
+    }
+    // A hardlink to a sensitive file we own would pass isFile/uid/mode; nlink
+    // === 1 refuses that (CR-M-008).
+    if (info.nlink !== 1) {
+      throw pathRejected(
+        `Telemetry trace path has unexpected link count ${info.nlink}: ${redact(tracePath)}`
+      );
     }
     if (foreignOwned(info)) {
       throw pathRejected(`Telemetry trace file is owned by another user: ${redact(tracePath)}`);
@@ -329,10 +375,13 @@ export class TelemetryRecorder {
 
   public async record(input: SpanInput): Promise<Span> {
     const span = sanitizeSpan(input, this.optInRawContent);
-    this.buffer.push(span);
     if (this.jsonlPath) {
+      // Append before buffering so a rejected disk write never leaves a span
+      // in the memory snapshot / OTLP export that the caller thinks failed
+      // (CR-M-011).
       await this.appendLine(JSON.stringify(span));
     }
+    this.buffer.push(span);
     return span;
   }
 
