@@ -235,8 +235,6 @@ export function matchArgPattern(
         const resolved = path.resolve(projectRoot, value);
         const relative = path.relative(projectRoot, resolved);
         if (relative.startsWith("..") || path.isAbsolute(relative)) return false;
-        const realRoot = realpathSync(projectRoot);
-        // realpath deepest existing ancestor; re-append missing tail.
         // CR-M-080: reject any symlink among existing ancestors or the leaf.
         const realRoot = realpathSync(projectRoot);
         let current = resolved;
