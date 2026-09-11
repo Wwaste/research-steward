@@ -57,17 +57,19 @@ export function isLegalFindingTransition(from: FindingFoldState, to: FindingFold
 export function extractLocatorPath(finding: unknown): string | null {
   if (finding === null || typeof finding !== "object") return null;
   const f = finding as { evidence?: unknown; locator?: unknown };
+  // CR-M-077 P5: first structured in the whole array wins over any v1 string.
   if (Array.isArray(f.evidence)) {
+    let fallback: string | null = null;
     for (const e of f.evidence) {
-      if (e !== null && typeof e === "object") {
-        const ev = e as { kind?: unknown; locator?: unknown };
-        if (ev.kind === "structured" && ev.locator !== null && typeof ev.locator === "object") {
-          const loc = (ev.locator as { path?: unknown }).path;
-          if (typeof loc === "string") return loc;
-        }
-        if (typeof ev.locator === "string") return ev.locator;
+      if (e === null || typeof e !== "object") continue;
+      const ev = e as { kind?: unknown; locator?: unknown };
+      if (ev.kind === "structured" && ev.locator !== null && typeof ev.locator === "object") {
+        const loc = (ev.locator as { path?: unknown }).path;
+        if (typeof loc === "string") return loc;
       }
+      if (fallback === null && typeof ev.locator === "string") fallback = ev.locator;
     }
+    if (fallback !== null) return fallback;
   }
   if (typeof f.locator === "string") return f.locator;
   return null;

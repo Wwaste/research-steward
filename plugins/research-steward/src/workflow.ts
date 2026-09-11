@@ -551,13 +551,16 @@ async function runOneNode(
       plan.limits.budget_max_invocations ??
       plan.nodes.length * (plan.limits.retry_limit + 1);
     try {
-      assertBudgetAllowsFromLedger({
-        events: coordinatorEvents,
-        window_start: new Date(Date.now() - budgetWindowMs).toISOString(),
-        max_invocations: budgetMax,
-        provider: node.adapter,
-        permit_token: permit.token
-      });
+      // Fake adapter is free and does not consume the paid budget window.
+      if (node.adapter !== "fake") {
+        assertBudgetAllowsFromLedger({
+          events: coordinatorEvents,
+          window_start: new Date(Date.now() - budgetWindowMs).toISOString(),
+          max_invocations: budgetMax,
+          provider: node.adapter,
+          permit_token: permit.token
+        });
+      }
     } catch (error) {
       await permit.release();
       throw error;

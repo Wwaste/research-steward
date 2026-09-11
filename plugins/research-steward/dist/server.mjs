@@ -72894,13 +72894,15 @@ async function runOneNode(root, plan, runId, node2, packetBundle, packetHash, co
     const budgetWindowMs = plan.limits.budget_window_ms ?? plan.limits.max_wall_time_ms;
     const budgetMax = plan.limits.budget_max_invocations ?? plan.nodes.length * (plan.limits.retry_limit + 1);
     try {
-      assertBudgetAllowsFromLedger({
-        events: coordinatorEvents,
-        window_start: new Date(Date.now() - budgetWindowMs).toISOString(),
-        max_invocations: budgetMax,
-        provider: node2.adapter,
-        permit_token: permit.token
-      });
+      if (node2.adapter !== "fake") {
+        assertBudgetAllowsFromLedger({
+          events: coordinatorEvents,
+          window_start: new Date(Date.now() - budgetWindowMs).toISOString(),
+          max_invocations: budgetMax,
+          provider: node2.adapter,
+          permit_token: permit.token
+        });
+      }
     } catch (error61) {
       await permit.release();
       throw error61;
