@@ -72320,6 +72320,52 @@ function allowsAutoReplay(snapshot, opts) {
   if (opts.resume_policy === "fake_only") return snapshot.adapter === "fake";
   return snapshot.replay_authorized && snapshot.replay_authorized_attempt === snapshot.attempt + 1;
 }
+var Hash = external_exports.string().regex(/^[a-f0-9]{64}$/);
+var InvocationStartedPayloadSchema = external_exports.object({
+  invocation_id: external_exports.string().regex(/^[a-f0-9]{32}$/),
+  run_id: external_exports.string().min(1),
+  node_id: external_exports.string().min(1),
+  attempt: external_exports.number().int().min(1),
+  adapter: external_exports.string().min(1),
+  model: external_exports.string().max(100).optional(),
+  pid: external_exports.number().int().optional(),
+  command_sha256: Hash
+}).strict();
+var InvocationFinishedPayloadSchema = external_exports.object({
+  invocation_id: external_exports.string().regex(/^[a-f0-9]{32}$/),
+  status: external_exports.enum(["ok", "failed"]),
+  failure_class: FailureClassSchema.nullable(),
+  stdout_sha256: Hash.optional(),
+  stderr_sha256: Hash.optional(),
+  duration_ms: external_exports.number().int().min(0)
+}).strict().superRefine((v, ctx) => {
+  if (v.status === "ok" && (v.stdout_sha256 === void 0 || v.failure_class !== null)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "ok requires stdout_sha256 and failure_class null"
+    });
+  }
+});
+var InvocationCancelRequestedPayloadSchema = external_exports.object({
+  invocation_id: external_exports.string().regex(/^[a-f0-9]{32}$/),
+  reason: external_exports.string().min(1).max(500)
+}).strict();
+var InvocationCancelledPayloadSchema = external_exports.object({
+  invocation_id: external_exports.string().regex(/^[a-f0-9]{32}$/),
+  kill_confirmed: external_exports.literal(true),
+  exit_signal: external_exports.string().max(32).optional()
+}).strict();
+var InvocationUnknownPayloadSchema = external_exports.object({
+  invocation_id: external_exports.string().regex(/^[a-f0-9]{32}$/),
+  marked_at_resume: external_exports.literal(true),
+  prior_state: external_exports.enum(["started", "cancel_requested"])
+}).strict();
+var InvocationReplayAuthorizedPayloadSchema = external_exports.object({
+  invocation_id: external_exports.string().regex(/^[a-f0-9]{32}$/),
+  authority: external_exports.string().min(1).max(100),
+  note: external_exports.string().max(2e3).optional(),
+  target_attempt: external_exports.number().int().min(1).optional()
+}).strict();
 
 // src/budget-permits.ts
 import { randomUUID as randomUUID4 } from "node:crypto";

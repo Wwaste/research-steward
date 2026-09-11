@@ -240,3 +240,72 @@ export function isTerminal(state: InvocationFoldState): boolean {
     state === "cancelled"
   );
 }
+
+
+// --- payload contracts (CR-M-069; store append guards land with protocol ①) ---
+
+const Hash = z.string().regex(/^[a-f0-9]{64}$/);
+
+export const InvocationStartedPayloadSchema = z
+  .object({
+    invocation_id: z.string().regex(/^[a-f0-9]{32}$/),
+    run_id: z.string().min(1),
+    node_id: z.string().min(1),
+    attempt: z.number().int().min(1),
+    adapter: z.string().min(1),
+    model: z.string().max(100).optional(),
+    pid: z.number().int().optional(),
+    command_sha256: Hash
+  })
+  .strict();
+
+export const InvocationFinishedPayloadSchema = z
+  .object({
+    invocation_id: z.string().regex(/^[a-f0-9]{32}$/),
+    status: z.enum(["ok", "failed"]),
+    failure_class: FailureClassSchema.nullable(),
+    stdout_sha256: Hash.optional(),
+    stderr_sha256: Hash.optional(),
+    duration_ms: z.number().int().min(0)
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    if (v.status === "ok" && (v.stdout_sha256 === undefined || v.failure_class !== null)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "ok requires stdout_sha256 and failure_class null"
+      });
+    }
+  });
+
+export const InvocationCancelRequestedPayloadSchema = z
+  .object({
+    invocation_id: z.string().regex(/^[a-f0-9]{32}$/),
+    reason: z.string().min(1).max(500)
+  })
+  .strict();
+
+export const InvocationCancelledPayloadSchema = z
+  .object({
+    invocation_id: z.string().regex(/^[a-f0-9]{32}$/),
+    kill_confirmed: z.literal(true),
+    exit_signal: z.string().max(32).optional()
+  })
+  .strict();
+
+export const InvocationUnknownPayloadSchema = z
+  .object({
+    invocation_id: z.string().regex(/^[a-f0-9]{32}$/),
+    marked_at_resume: z.literal(true),
+    prior_state: z.enum(["started", "cancel_requested"])
+  })
+  .strict();
+
+export const InvocationReplayAuthorizedPayloadSchema = z
+  .object({
+    invocation_id: z.string().regex(/^[a-f0-9]{32}$/),
+    authority: z.string().min(1).max(100),
+    note: z.string().max(2_000).optional(),
+    target_attempt: z.number().int().min(1).optional()
+  })
+  .strict();
