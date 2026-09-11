@@ -24,7 +24,7 @@ describe("evidence locators (Task 3.2)", () => {
         kind: "command_result",
         executable: "node",
         argv: ["-v"],
-        cwd: "/project",
+        cwd: "runs/check",
         exit_code: 0,
         stdout_sha256: H,
         stderr_sha256: H
@@ -50,7 +50,7 @@ describe("evidence locators (Task 3.2)", () => {
         kind: "command_result",
         executable: "sh",
         argv: ["-c", "echo hi; rm -rf /"],
-        cwd: "/project",
+        cwd: "runs/check",
         exit_code: 0,
         stdout_sha256: H,
         stderr_sha256: H
@@ -78,8 +78,8 @@ describe("evidence locators (Task 3.2)", () => {
   });
 
   it("fingerprints are stable for equal locators", () => {
-    const a = parseEvidenceLocator({ kind: "doi", doi: "10.1/x" });
-    const b = parseEvidenceLocator({ kind: "doi", doi: "10.1/x" });
+    const a = parseEvidenceLocator({ kind: "doi", doi: "10.1234/xyz123" });
+    const b = parseEvidenceLocator({ kind: "doi", doi: "10.1234/xyz123" });
     expect(evidenceFingerprint(a)).toBe(evidenceFingerprint(b));
     expect(evidenceFingerprint(a)).toMatch(/^[a-f0-9]{64}$/);
   });

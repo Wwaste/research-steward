@@ -1,11 +1,14 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { z } from "zod";
-import { ResearchStewardError, sha256Text } from "./utils.js";
+import { ResearchStewardError, sha256Text, stableJson } from "./utils.js";
+import { validateRelativePath } from "./paths.js";
 
 /**
- * Structured evidence locators (Task 3.2). Discriminated union replacing free
- * text. Protocol v1 free-text remains a read-only legacy variant until an
- * explicit upgrade tool migrates it — never guess a parse.
+ * Structured evidence locators — module layer (DESIGN-EVIDENCE-UNION §2).
+ * The discriminated union definition moves to protocol.ts in step ① (shared
+ * surface, Phase 2 gate); this file keeps upgrade/fingerprint/validate
+ * functions and the locator shapes until then.
  */
 
 const HashSchema = z.string().regex(/^[a-f0-9]{64}$/);
@@ -13,20 +16,41 @@ const HashSchema = z.string().regex(/^[a-f0-9]{64}$/);
 export const FileRangeEvidenceSchema = z
   .object({
     kind: z.literal("file_range"),
+    packet_id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/).optional(),
     path: z.string().min(1).max(4_096),
     start_line: z.number().int().positive().optional(),
     end_line: z.number().int().positive().optional(),
     page: z.number().int().positive().optional(),
     sheet: z.string().min(1).max(100).optional(),
     cell: z.string().min(1).max(32).optional(),
+    anchor: z.string().min(1).max(200).optional(),
     content_sha256: HashSchema.optional(),
     file_sha256: HashSchema.optional()
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (
+      value.start_line !== undefined &&
+      value.end_line !== undefined &&
+      value.end_line < value.start_line
+    ) {
+      ctx.addIssue({ code: "custom", message: "end_line must be >= start_line" });
+    }
+    if (
+      value.content_sha256 !== undefined &&
+      (value.start_line === undefined || value.end_line === undefined)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "content_sha256 requires start_line and end_line"
+      });
+    }
+  });
 
 export const ArtifactEvidenceSchema = z
   .object({
     kind: z.literal("artifact"),
+    packet_id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/).optional(),
     path: z.string().min(1).max(4_096),
     file_sha256: HashSchema,
     media_type: z.string().min(1).max(100).optional()
@@ -38,6 +62,7 @@ export const CommandResultEvidenceSchema = z
     kind: z.literal("command_result"),
     executable: z.string().min(1).max(200),
     argv: z.array(z.string().max(2_000)).max(64),
+    /** Project-relative cwd (DESIGN §1). */
     cwd: z.string().min(1).max(4_096),
     exit_code: z.number().int(),
     stdout_sha256: HashSchema,
@@ -50,6 +75,14 @@ export const CommandResultEvidenceSchema = z
       if (arg.includes("\0")) {
         ctx.addIssue({ code: "custom", message: "argv must not contain NUL" });
       }
+    }
+    try {
+      validateRelativePath(value.cwd);
+    } catch {
+      ctx.addIssue({
+        code: "custom",
+        message: "cwd must be a project-relative path without .. or absolute prefixes"
+      });
     }
   });
 
@@ -65,7 +98,7 @@ export const UrlEvidenceSchema = z
 export const DoiEvidenceSchema = z
   .object({
     kind: z.literal("doi"),
-    doi: z.string().min(3).max(200),
+    doi: z.string().min(3).max(200).regex(/^10\.\d{4,9}\/\S{1,190}$/i),
     retrieved_at: z.string().datetime({ offset: true }).optional(),
     metadata_sha256: HashSchema.optional()
   })
@@ -80,7 +113,6 @@ export const DatasetRecordEvidenceSchema = z
   })
   .strict();
 
-/** Read-only legacy free text. Upgrade requires an explicit tool. */
 export const FreeTextEvidenceSchema = z
   .object({
     kind: z.literal("free_text"),
@@ -105,18 +137,45 @@ export function parseEvidenceLocator(raw: unknown): EvidenceLocator {
   return EvidenceLocatorSchema.parse(raw);
 }
 
+/** CR-M / DESIGN §2: stableJson so key order cannot change the fingerprint. */
 export function evidenceFingerprint(locator: EvidenceLocator): string {
-  return sha256Text(JSON.stringify(locator));
+  return sha256Text(stableJson(locator));
 }
 
 /**
- * Free-text upgrade is explicit and conservative: only a single file path
- * (optional :start-end lines) is auto-upgraded. Anything else stays free_text.
+ * content_sha256: sha256 over the raw byte range [start_line, end_line]
+ * (1-based, inclusive) split on 0x0A, including each LF except a missing
+ * trailing LF on the last line. No encoding or CRLF normalization.
  */
+export function hashFileLineRange(
+  bytes: Buffer,
+  startLine: number,
+  endLine: number
+): string {
+  // Split on raw 0x0A; no encoding or CRLF normalization (DESIGN §1).
+  const parts: Buffer[] = [];
+  let start = 0;
+  for (let i = 0; i < bytes.length; i += 1) {
+    if (bytes[i] === 0x0a) {
+      parts.push(bytes.subarray(start, i + 1)); // include LF
+      start = i + 1;
+    }
+  }
+  if (start < bytes.length) parts.push(bytes.subarray(start));
+  if (startLine < 1 || endLine > parts.length || endLine < startLine) {
+    throw new ResearchStewardError(
+      "EVIDENCE_LINE_RANGE_INVALID",
+      "start_line/end_line must lie within the file."
+    );
+  }
+  const chunk = Buffer.concat(parts.slice(startLine - 1, endLine));
+  return createHash("sha256").update(chunk).digest("hex");
+}
+
 export function tryUpgradeFreeText(text: string): EvidenceLocator | null {
   const trimmed = text.trim();
   const fileOnly = /^([^\s:]+)$/.exec(trimmed);
-  if (fileOnly && !trimmed.includes("://")) {
+  if (fileOnly) {
     return FileRangeEvidenceSchema.parse({ kind: "file_range", path: trimmed });
   }
   const fileLines = /^([^\s:]+):(\d+)-(\d+)$/.exec(trimmed);
@@ -142,6 +201,15 @@ export function upgradeOrKeepFreeText(text: string): EvidenceLocator {
 }
 
 export function assertNoPathEscape(projectRoot: string, evidencePath: string): void {
+  try {
+    validateRelativePath(evidencePath);
+  } catch (error) {
+    throw new ResearchStewardError(
+      "EVIDENCE_PATH_ESCAPE",
+      "Evidence path must stay inside the project root.",
+      { reason: (error as Error).message }
+    );
+  }
   const relative = path.relative(projectRoot, path.resolve(projectRoot, evidencePath));
   if (
     relative.startsWith(`..${path.sep}`) ||
