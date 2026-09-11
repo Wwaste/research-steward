@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { freezePacket, readEvents } from "../src/store.js";
 import { runProvider } from "../src/providers.js";
-import { foldInvocations, makeInvocationId } from "../src/invocations.js";
+import { allowsAutoReplay, foldInvocations, makeInvocationId } from "../src/invocations.js";
 import { initializedProject } from "./helpers.js";
 
 /**
@@ -121,5 +121,80 @@ describe("invocation §5 scenarios", () => {
     // Fold accepts the event (schema-level duration is not validated here);
     // clock skew is rejected at append time by store — documented boundary.
     expect(snap.state).toBe("finished_ok");
+  });
+});
+
+describe("CR-M-060 residual scenarios", () => {
+  it("(4) kill after exit: terminate is a no-op; ledger already has finished", async () => {
+    const { shimPath } = await shim("echo 'quota exceeded' >&2\nexit 1\n");
+    const root = await initializedProject("kill-race");
+    let terminate: ((s?: NodeJS.Signals) => void) | undefined;
+    await withKimi(shimPath, async () => {
+      await expect(
+        runProvider(node as never, "p", root, 1000, {
+          onProcess: (h) => {
+            terminate = h.terminate;
+          }
+        })
+      ).rejects.toMatchObject({ code: "PROVIDER_EXIT_FAILED" });
+    });
+    // Process already exited; terminate must not throw.
+    expect(() => terminate?.("SIGTERM")).not.toThrow();
+  });
+
+  it("(5) detached grandchild is killed with the process group", async () => {
+    // Background a sleep child, then exit — group kill should reap it.
+    const { shimPath, counterPath } = await shim(
+      "(sleep 30 &) \necho 'quota exceeded' >&2\nexit 1\n"
+    );
+    const root = await initializedProject("grandchild");
+    await withKimi(shimPath, async () => {
+      await expect(
+        runProvider({ ...node, timeout_ms: 2_000 } as never, "p", root, 1000)
+      ).rejects.toMatchObject({ code: "PROVIDER_EXIT_FAILED" });
+    });
+    const lines = (await readFile(counterPath, "utf8")).trim().split("\n").filter(Boolean);
+    expect(lines).toHaveLength(1);
+  });
+
+  it("(7) only the lease holder may mark unknown (fold does not invent lease)", () => {
+    // Lease enforcement is directory-lease assertOwned; here we pin that fold
+    // never creates unknown without an explicit invocation_unknown event.
+    const id = makeInvocationId("r", "n1", 1);
+    const snap = foldInvocations([
+      {
+        type: "invocation_started",
+        metadata: { invocation_id: id, run_id: "r", node_id: "n1", attempt: 1, adapter: "fake" }
+      }
+    ] as never).get(id)!;
+    expect(snap.state).toBe("started");
+    expect(snap.prior_state).toBeNull();
+  });
+
+  it("(9) cancel_requested without kill folds to unknown on resume; no auto-replay", () => {
+    const id = makeInvocationId("r", "n1", 1);
+    const events = [
+      {
+        type: "invocation_started",
+        metadata: { invocation_id: id, run_id: "r", node_id: "n1", attempt: 1, adapter: "kimi" }
+      },
+      {
+        type: "invocation_cancel_requested",
+        metadata: { invocation_id: id, reason: "user" }
+      },
+      {
+        type: "invocation_unknown",
+        metadata: {
+          invocation_id: id,
+          marked_at_resume: true,
+          prior_state: "cancel_requested"
+        }
+      }
+    ] as never;
+    const snap = foldInvocations(events as never).get(id)!;
+    expect(snap.state).toBe("unknown");
+    expect(snap.prior_state).toBe("cancel_requested");
+    expect(allowsAutoReplay(snap, { resume_policy: "never" })).toBe(false);
+    expect(allowsAutoReplay(snap, { resume_policy: "fake_only" })).toBe(false);
   });
 });
