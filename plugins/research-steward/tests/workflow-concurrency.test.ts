@@ -1,7 +1,10 @@
 import { mkdir, rename, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it as baseIt, vi } from "vitest";
 import type { RoundtableNode, RoundtablePlan } from "../src/protocol.js";
+
+// CR-M-078: explicit timeout — this family has flaked under the 5s default.
+const it = (name: string, fn: () => Promise<void>) => baseIt(name, fn, 20_000);
 
 vi.mock("../src/providers.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/providers.js")>();

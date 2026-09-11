@@ -339,6 +339,19 @@ export async function readEvents(root: string): Promise<CommittedEvent[]> {
   return events;
 }
 
+/**
+ * test-only injection (CR-M-078): invoked after an event file is written and
+ * before the ledger head is updated. Production must leave this null.
+ * ESM live bindings cannot be assigned from importers — use the setter.
+ */
+export let __test_beforeHeadUpdate: (() => Promise<void>) | null = null;
+
+export function __test_setBeforeHeadUpdate(
+  fn: (() => Promise<void>) | null
+): void {
+  __test_beforeHeadUpdate = fn;
+}
+
 export async function appendEvent(root: string, rawDraft: EventDraft): Promise<CommittedEvent> {
   const manifest = await readManifest(root);
   const draft = EventDraftSchema.parse(rawDraft);
@@ -602,6 +615,9 @@ export async function appendEvent(root: string, rawDraft: EventDraft): Promise<C
       await lease.assertOwned();
       await atomicWriteFile(eventPath, serialized);
       eventWritten = true;
+      if (__test_beforeHeadUpdate !== null) {
+        await __test_beforeHeadUpdate();
+      }
       await lease.assertOwned();
       await writeLedgerHead(root, {
         version: 1,

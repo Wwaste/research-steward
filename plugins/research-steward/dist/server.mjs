@@ -70003,6 +70003,7 @@ async function readEvents(root) {
   }
   return events;
 }
+var __test_beforeHeadUpdate = null;
 async function appendEvent(root, rawDraft) {
   const manifest = await readManifest(root);
   const draft = EventDraftSchema.parse(rawDraft);
@@ -70228,6 +70229,9 @@ async function appendEvent(root, rawDraft) {
       await lease.assertOwned();
       await atomicWriteFile(eventPath, serialized);
       eventWritten = true;
+      if (__test_beforeHeadUpdate !== null) {
+        await __test_beforeHeadUpdate();
+      }
       await lease.assertOwned();
       await writeLedgerHead(root, {
         version: 1,

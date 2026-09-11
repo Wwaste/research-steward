@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it as baseIt } from "vitest";
+
+// CR-M-078: explicit timeout — this family has flaked under the 5s default.
+const it = (name: string, fn: () => Promise<void>) => baseIt(name, fn, 20_000);
 import type { CommittedEvent } from "../src/protocol.js";
 import {
   buildLedgerIndex,

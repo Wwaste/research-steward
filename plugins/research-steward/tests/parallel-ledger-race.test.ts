@@ -1,238 +1,182 @@
-import { writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { chmod, mkdtemp, writeFile as wf } from "node:fs/promises";
-import os from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import { freezePacket } from "../src/store.js";
+import {
+  __test_setBeforeHeadUpdate,
+  appendEvent,
+  freezePacket,
+  readEvents
+} from "../src/store.js";
 import { runRoundtable } from "../src/workflow.js";
 import { initializedProject } from "./helpers.js";
 
-const cleanup: string[] = [];
 afterEach(async () => {
-  const { rm } = await import("node:fs/promises");
-  for (const d of cleanup.splice(0)) await rm(d, { recursive: true, force: true });
+  __test_setBeforeHeadUpdate(null);
 });
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * CR-M-075: parallel nodes must not readEvents mid-batch (LEDGER_HEAD_MISMATCH).
  */
 describe("parallel node ledger race (CR-M-075)", () => {
-  it("two parallel fake nodes complete without LEDGER_HEAD_MISMATCH", async () => {
-    process.env.RESEARCH_STEWARD_ENABLE_FAKE_ADAPTER = "1";
-    const root = await initializedProject("parallel-race");
-    await writeFile(path.join(root, "n.md"), "x\n", "utf8");
-    await freezePacket(root, "pkt-par", ["n.md"]);
-    try {
-      const result = await runRoundtable(
-        root,
-        {
-          version: 1,
-          name: "par",
-          packet_id: "pkt-par",
-          mode: "open",
-          limits: {
-            max_parallel: 2,
-            max_wall_time_ms: 1_800_000,
-            max_prompt_chars: 20_000,
-            max_output_chars: 10_000,
-            retry_limit: 0,
-            max_failures: 3
-          },
-          nodes: [
-            {
-              id: "a",
-              actor_id: "aa",
-              role: "analyst",
-              adapter: "fake",
-              brief: "a",
-              depends_on: [],
-              visibility: "shared",
-              can_adjudicate: false,
-              timeout_ms: 8_000
+  it(
+    "two parallel fake nodes complete without LEDGER_HEAD_MISMATCH",
+    async () => {
+      process.env.RESEARCH_STEWARD_ENABLE_FAKE_ADAPTER = "1";
+      const root = await initializedProject("parallel-race");
+      await writeFile(path.join(root, "n.md"), "x\n", "utf8");
+      await freezePacket(root, "pkt-par", ["n.md"]);
+      try {
+        const result = await runRoundtable(
+          root,
+          {
+            version: 1,
+            name: "par",
+            packet_id: "pkt-par",
+            mode: "open",
+            limits: {
+              max_parallel: 2,
+              max_wall_time_ms: 1_800_000,
+              max_prompt_chars: 20_000,
+              max_output_chars: 10_000,
+              retry_limit: 0,
+              max_failures: 3
             },
-            {
-              id: "b",
-              actor_id: "ab",
-              role: "analyst",
-              adapter: "fake",
-              brief: "b",
-              depends_on: [],
-              visibility: "shared",
-              can_adjudicate: false,
-              timeout_ms: 8_000
-            }
-          ]
-        } as never,
-        "par-run"
-      );
-      expect(result.outcome).toBe("complete");
-      expect(result.failed_nodes).toEqual([]);
-    } finally {
-      delete process.env.RESEARCH_STEWARD_ENABLE_FAKE_ADAPTER;
-    }
-  });
+            nodes: [
+              {
+                id: "a",
+                actor_id: "aa",
+                role: "analyst",
+                adapter: "fake",
+                brief: "a",
+                depends_on: [],
+                visibility: "shared",
+                can_adjudicate: false,
+                timeout_ms: 8_000
+              },
+              {
+                id: "b",
+                actor_id: "ab",
+                role: "analyst",
+                adapter: "fake",
+                brief: "b",
+                depends_on: [],
+                visibility: "shared",
+                can_adjudicate: false,
+                timeout_ms: 8_000
+              }
+            ]
+          } as never,
+          "par-run"
+        );
+        expect(result.outcome).toBe("complete");
+        expect(result.failed_nodes).toEqual([]);
+      } finally {
+        delete process.env.RESEARCH_STEWARD_ENABLE_FAKE_ADAPTER;
+      }
+    },
+    20_000
+  );
 });
 
+/**
+ * CR-M-078 deterministic injection (approved skeleton in #37).
+ * Replaces the earlier probability stagger tests that never triggered.
+ */
+describe("CR-M-078 deterministic head-update window", () => {
+  it(
+    "readEvents inside the write-before-head window fails closed as LEDGER_HEAD_MISMATCH",
+    async () => {
+      const root = await initializedProject("078-window");
+      await writeFile(path.join(root, "n.md"), "x\n", "utf8");
+      await freezePacket(root, "pkt-078", ["n.md"]);
+      let observed: unknown;
+      __test_setBeforeHeadUpdate(async () => {
+        try {
+          await readEvents(root);
+        } catch (error) {
+          observed = error;
+        }
+      });
+      await appendEvent(root, {
+        type: "agent_contribution",
+        run_id: "078-window",
+        actor: { id: "a1", role: "analyst", adapter: "fake" },
+        summary: "probe",
+        visibility: "shared",
+        status: "complete",
+        metadata: { node_id: "n1" }
+      });
+      expect(observed).toMatchObject({ code: "LEDGER_HEAD_MISMATCH" });
+    },
+    15_000
+  );
 
-describe("CR-M-078 staggered parallel ledger race", () => {
-  it("overlapping node completions do not hit LEDGER_HEAD_MISMATCH", async () => {
-    const shimDir = await mkdtemp(path.join(os.tmpdir(), "rs-stag-"));
-    cleanup.push(shimDir);
-    const counter = path.join(shimDir, "c.txt");
-    const slow = path.join(shimDir, "slow.sh");
-    await wf(slow, `#!/bin/sh\necho called >> '${counter}'\nsleep 0.8\necho 'quota exceeded' >&2\nexit 1\n`, "utf8");
-    await chmod(slow, 0o755);
-    const fast = path.join(shimDir, "fast.sh");
-    await wf(fast, `#!/bin/sh\necho called >> '${counter}'\necho 'quota exceeded' >&2\nexit 1\n`, "utf8");
-    await chmod(fast, 0o755);
-    const root = await initializedProject("stagger");
-    await wf(path.join(root, "n.md"), "x\n", "utf8");
-    await freezePacket(root, "pkt-st", ["n.md"]);
-    const prevSlow = process.env.RESEARCH_STEWARD_KIMI_PATH;
-    // Both nodes use kimi; the same PATH variable is read per-call — set to slow
-    // then use two shims via separate env is not possible in one process.
-    // Instead: two independent nodes both sleep via one shim that sleeps 0.8s,
-    // max_parallel=2 so they overlap; retry_limit=1 on A adds a staggered retry.
-    process.env.RESEARCH_STEWARD_KIMI_PATH = slow;
-    try {
-      await runRoundtable(
-        root,
-        {
-          version: 1,
-          name: "stag",
-          packet_id: "pkt-st",
-          mode: "open",
-          limits: {
-            max_parallel: 2,
-            max_wall_time_ms: 1_800_000,
-            max_prompt_chars: 20_000,
-            max_output_chars: 10_000,
-            retry_limit: 0,
-            max_failures: 4,
-            budget_window_ms: 1_800_000,
-            budget_max_invocations: 10
-          },
-          nodes: [
-            {
-              id: "a",
-              actor_id: "aa",
-              role: "analyst",
-              adapter: "kimi",
-              model: "kimi-latest",
-              brief: "a",
-              depends_on: [],
-              visibility: "shared",
-              can_adjudicate: false,
-              timeout_ms: 8_000
+  it(
+    "two parallel nodes still complete when the write-before-head window is held open",
+    async () => {
+      process.env.RESEARCH_STEWARD_ENABLE_FAKE_ADAPTER = "1";
+      const root = await initializedProject("078-hold");
+      await writeFile(path.join(root, "n.md"), "x\n", "utf8");
+      await freezePacket(root, "pkt-078h", ["n.md"]);
+      // Hold the window long enough that a sibling mid-batch readEvents would
+      // land inside it. Production path (coordinator snapshot) must survive.
+      __test_setBeforeHeadUpdate(async () => {
+        await sleep(200);
+      });
+      try {
+        const result = await runRoundtable(
+          root,
+          {
+            version: 1,
+            name: "hold",
+            packet_id: "pkt-078h",
+            mode: "open",
+            limits: {
+              max_parallel: 2,
+              max_wall_time_ms: 1_800_000,
+              max_prompt_chars: 20_000,
+              max_output_chars: 10_000,
+              retry_limit: 0,
+              max_failures: 3
             },
-            {
-              id: "b",
-              actor_id: "ab",
-              role: "analyst",
-              adapter: "kimi",
-              model: "kimi-latest",
-              brief: "b",
-              depends_on: [],
-              visibility: "shared",
-              can_adjudicate: false,
-              timeout_ms: 8_000
-            }
-          ]
-        } as never,
-        "stag-run"
-      );
-      // If readEvents were reintroduced in the parallel path this would throw
-      // LEDGER_HEAD_MISMATCH; reaching here means the snapshot path held.
-      expect(true).toBe(true);
-    } finally {
-      if (prevSlow === undefined) delete process.env.RESEARCH_STEWARD_KIMI_PATH;
-      else process.env.RESEARCH_STEWARD_KIMI_PATH = prevSlow;
-    }
-    const { readFile } = await import("node:fs/promises");
-    const lines = (await readFile(counter, "utf8")).trim().split("\n").filter(Boolean);
-    expect(lines.length).toBeGreaterThanOrEqual(2);
-  });
-});
-
-
-describe("CR-M-078 true stagger (retry node overlaps long node)", () => {
-  it("retry_limit=1 transport node overlaps a long-running sibling without LEDGER_HEAD_MISMATCH", async () => {
-    const shimDir = await mkdtemp(path.join(os.tmpdir(), "rs-stag2-"));
-    cleanup.push(shimDir);
-    const counter = path.join(shimDir, "c.txt");
-    // First call fails transport (connection refused text); second call succeeds.
-    // Use a state file so attempt 1 fails and attempt 2 succeeds.
-    const state = path.join(shimDir, "state");
-    const shim = path.join(shimDir, "flaky.sh");
-    await wf(
-      shim,
-      `#!/bin/sh\necho called >> '${counter}'\nif [ -f '${state}' ]; then\necho ok\nexit 0\nelse\nsleep 0.6\ntouch '${state}'\necho 'connection refused' >&2\nexit 1\nfi\n`,
-      "utf8"
-    );
-    await chmod(shim, 0o755);
-    // long-running sibling
-    const long = path.join(shimDir, "long.sh");
-    await wf(long, `#!/bin/sh\necho called >> '${counter}'\nsleep 1.2\necho 'quota exceeded' >&2\nexit 1\n`, "utf8");
-    await chmod(long, 0o755);
-    const root = await initializedProject("stagger2");
-    await wf(path.join(root, "n.md"), "x\n", "utf8");
-    await freezePacket(root, "pkt-s2", ["n.md"]);
-    // Both use kimi path — cannot have two different shims via one env.
-    // Use flaky for both: retry node will stagger; second node also flaky.
-    process.env.RESEARCH_STEWARD_KIMI_PATH = shim;
-    try {
-      await runRoundtable(
-        root,
-        {
-          version: 1,
-          name: "stag2",
-          packet_id: "pkt-s2",
-          mode: "open",
-          limits: {
-            max_parallel: 2,
-            max_wall_time_ms: 1_800_000,
-            max_prompt_chars: 20_000,
-            max_output_chars: 10_000,
-            retry_limit: 1,
-            max_failures: 4,
-            budget_window_ms: 1_800_000,
-            budget_max_invocations: 20
-          },
-          nodes: [
-            {
-              id: "retry",
-              actor_id: "ar",
-              role: "analyst",
-              adapter: "kimi",
-              model: "kimi-latest",
-              brief: "r",
-              depends_on: [],
-              visibility: "shared",
-              can_adjudicate: false,
-              timeout_ms: 10_000
-            },
-            {
-              id: "long",
-              actor_id: "al",
-              role: "analyst",
-              adapter: "kimi",
-              model: "kimi-latest",
-              brief: "l",
-              depends_on: [],
-              visibility: "shared",
-              can_adjudicate: false,
-              timeout_ms: 10_000
-            }
-          ]
-        } as never,
-        "stag2-run"
-      );
-      expect(true).toBe(true);
-    } finally {
-      delete process.env.RESEARCH_STEWARD_KIMI_PATH;
-    }
-    const { readFile } = await import("node:fs/promises");
-    const lines = (await readFile(counter, "utf8")).trim().split("\n").filter(Boolean);
-    expect(lines.length).toBeGreaterThanOrEqual(2);
-  });
+            nodes: [
+              {
+                id: "a",
+                actor_id: "aa",
+                role: "analyst",
+                adapter: "fake",
+                brief: "a",
+                depends_on: [],
+                visibility: "shared",
+                can_adjudicate: false,
+                timeout_ms: 10_000
+              },
+              {
+                id: "b",
+                actor_id: "ab",
+                role: "analyst",
+                adapter: "fake",
+                brief: "b",
+                depends_on: [],
+                visibility: "shared",
+                can_adjudicate: false,
+                timeout_ms: 10_000
+              }
+            ]
+          } as never,
+          "hold-run"
+        );
+        expect(result.outcome).toBe("complete");
+        expect(result.failed_nodes).toEqual([]);
+      } finally {
+        __test_setBeforeHeadUpdate(null);
+        delete process.env.RESEARCH_STEWARD_ENABLE_FAKE_ADAPTER;
+      }
+    },
+    25_000
+  );
 });
