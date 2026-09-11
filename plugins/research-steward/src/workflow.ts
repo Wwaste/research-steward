@@ -457,7 +457,8 @@ async function runOneNode(
   packetHash: string,
   completed: ReadonlyMap<string, CommittedEvent>,
   deadlineAt: number,
-  assertCoordinatorOwned: AssertCoordinatorOwned
+  assertCoordinatorOwned: AssertCoordinatorOwned,
+  coordinatorEvents: readonly CommittedEvent[]
 ): Promise<CommittedEvent> {
   const dependencyEvents = node.depends_on
     .map((id) => completed.get(id))
@@ -521,9 +522,20 @@ async function runOneNode(
       ...node,
       timeout_ms: Math.min(node.timeout_ms, remainingMs)
     };
+    // CR-M-071: continue from the highest folded attempt (new invocation_id).
+    const prior = foldInvocations(
+      coordinatorEvents.filter((e) => e.run_id === runId)
+    );
+    const priorAttempts = [...prior.values()]
+      .filter((snap) => snap.node_id === node.id)
+      .map((snap) => snap.attempt);
+    if (attempts === 0 && priorAttempts.length > 0) {
+      attempts = Math.max(...priorAttempts);
+    }
     attempts += 1;
     const invocationId = makeInvocationId(runId, node.id, attempts);
-    // CR-M-072: permit → budget → started → spawn
+    // CR-M-075: never readEvents inside a parallel node path — budget uses
+    // the coordinator snapshot. CR-M-072: permit → budget → started → spawn.
     const runtimeRoot = path.join(root, ".research", "runtime");
     const permit = await acquirePermitSlot({
       runtimeRoot,
@@ -532,12 +544,13 @@ async function runOneNode(
       staleMs: node.timeout_ms + 30_000
     });
     try {
-      const paidEvents = await readEvents(root);
       assertBudgetAllowsFromLedger({
-        events: paidEvents,
+        events: coordinatorEvents,
         window_start: new Date(Date.now() - plan.limits.max_wall_time_ms).toISOString(),
-        max_invocations: plan.limits.max_failures * 4 + plan.nodes.length * (plan.limits.retry_limit + 1),
-        provider: node.adapter
+        max_invocations:
+          plan.limits.max_failures * 4 + plan.nodes.length * (plan.limits.retry_limit + 1),
+        provider: node.adapter,
+        permit_token: permit.token
       });
     } catch (error) {
       await permit.release();
@@ -944,7 +957,8 @@ export async function runRoundtable(
             packet.packet_hash,
             completed,
             deadlineAt,
-            assertCoordinatorOwned
+            assertCoordinatorOwned,
+            events
           )
         )
       );

@@ -55,7 +55,8 @@ describe("budget fold from ledger (DESIGN-BUDGET-PERMITS)", () => {
         events,
         window_start: "2026-09-11T00:00:00.000Z",
         max_invocations: 1,
-        provider: "kimi"
+        provider: "kimi",
+        permit_token: "tok"
       })
     ).toThrowError(expect.objectContaining({ code: "BUDGET_EXCEEDED" }));
     expect(() =>
@@ -63,8 +64,17 @@ describe("budget fold from ledger (DESIGN-BUDGET-PERMITS)", () => {
         events,
         window_start: "2026-09-11T00:00:00.000Z",
         max_invocations: 2,
-        provider: "kimi"
+        provider: "kimi",
+        permit_token: "tok"
       })
     ).not.toThrow();
+    expect(() =>
+      assertBudgetAllowsFromLedger({
+        events,
+        window_start: "2026-09-11T00:00:00.000Z",
+        max_invocations: 2,
+        provider: "kimi"
+      })
+    ).toThrowError(expect.objectContaining({ code: "PERMIT_REQUIRED" }));
   });
 });

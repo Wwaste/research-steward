@@ -72465,6 +72465,12 @@ function countPaidInvocationsInWindow(events, windowStartIso, paidAdapters = ["k
   return n;
 }
 function assertBudgetAllowsFromLedger(input2) {
+  if (input2.permit_token === void 0 || input2.permit_token === "") {
+    throw new ResearchStewardError(
+      "PERMIT_REQUIRED",
+      "Budget checks require a held permit token."
+    );
+  }
   const used = countPaidInvocationsInWindow(
     input2.events,
     input2.window_start,
@@ -72803,7 +72809,7 @@ async function blockRemainingNodes(root, plan, runId, packetHash, reason, assert
   }
   return events;
 }
-async function runOneNode(root, plan, runId, node2, packetBundle, packetHash, completed, deadlineAt, assertCoordinatorOwned) {
+async function runOneNode(root, plan, runId, node2, packetBundle, packetHash, completed, deadlineAt, assertCoordinatorOwned, coordinatorEvents) {
   const dependencyEvents = node2.depends_on.map((id) => completed.get(id)).filter((event) => event !== void 0);
   const failedDependency = dependencyEvents.find((event) => event.status !== "complete");
   if (failedDependency) {
@@ -72863,6 +72869,13 @@ async function runOneNode(root, plan, runId, node2, packetBundle, packetHash, co
       ...node2,
       timeout_ms: Math.min(node2.timeout_ms, remainingMs)
     };
+    const prior = foldInvocations(
+      coordinatorEvents.filter((e) => e.run_id === runId)
+    );
+    const priorAttempts = [...prior.values()].filter((snap) => snap.node_id === node2.id).map((snap) => snap.attempt);
+    if (attempts === 0 && priorAttempts.length > 0) {
+      attempts = Math.max(...priorAttempts);
+    }
     attempts += 1;
     const invocationId = makeInvocationId(runId, node2.id, attempts);
     const runtimeRoot = path7.join(root, ".research", "runtime");
@@ -72873,12 +72886,12 @@ async function runOneNode(root, plan, runId, node2, packetBundle, packetHash, co
       staleMs: node2.timeout_ms + 3e4
     });
     try {
-      const paidEvents = await readEvents(root);
       assertBudgetAllowsFromLedger({
-        events: paidEvents,
+        events: coordinatorEvents,
         window_start: new Date(Date.now() - plan.limits.max_wall_time_ms).toISOString(),
         max_invocations: plan.limits.max_failures * 4 + plan.nodes.length * (plan.limits.retry_limit + 1),
-        provider: node2.adapter
+        provider: node2.adapter,
+        permit_token: permit.token
       });
     } catch (error61) {
       await permit.release();
@@ -73244,7 +73257,8 @@ async function runRoundtable(root, rawPlan, requestedRunId) {
             packet.packet_hash,
             completed,
             deadlineAt,
-            assertCoordinatorOwned
+            assertCoordinatorOwned,
+            events
           )
         )
       );

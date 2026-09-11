@@ -153,7 +153,15 @@ export function assertBudgetAllowsFromLedger(input: {
   window_start: string;
   max_invocations: number;
   provider: string;
+  /** CR-M-072: permit credential proving the caller holds a slot. */
+  permit_token?: string;
 }): void {
+  if (input.permit_token === undefined || input.permit_token === "") {
+    throw new ResearchStewardError(
+      "PERMIT_REQUIRED",
+      "Budget checks require a held permit token."
+    );
+  }
   const used = countPaidInvocationsInWindow(
     input.events,
     input.window_start,
