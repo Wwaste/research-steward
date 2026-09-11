@@ -4,7 +4,8 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { freezePacket, readEvents } from "../src/store.js";
 import { runProvider } from "../src/providers.js";
-import { allowsAutoReplay, foldInvocations, makeInvocationId } from "../src/invocations.js";
+import { allowsAutoReplay, assertCancellable, foldInvocations, makeInvocationId } from "../src/invocations.js";
+import { runRoundtable } from "../src/workflow.js";
 import { initializedProject } from "./helpers.js";
 
 /**
@@ -124,8 +125,8 @@ describe("invocation §5 scenarios", () => {
   });
 });
 
-describe("CR-M-060 residual scenarios", () => {
-  it("(4) kill after exit: terminate is a no-op; ledger already has finished", async () => {
+describe("CR-M-060 residual scenarios (narrowed per #22)", () => {
+  it("(4) kill race: ledger folds finished_failed; cancel of terminal is typed", async () => {
     const { shimPath } = await shim("echo 'quota exceeded' >&2\nexit 1\n");
     const root = await initializedProject("kill-race");
     let terminate: ((s?: NodeJS.Signals) => void) | undefined;
@@ -138,43 +139,107 @@ describe("CR-M-060 residual scenarios", () => {
         })
       ).rejects.toMatchObject({ code: "PROVIDER_EXIT_FAILED" });
     });
-    // Process already exited; terminate must not throw.
-    expect(() => terminate?.("SIGTERM")).not.toThrow();
-  });
-
-  it("(5) detached grandchild is killed with the process group", async () => {
-    // Background a sleep child, then exit — group kill should reap it.
-    const { shimPath, counterPath } = await shim(
-      "sleep 30 &\nsleep 30\n"
-    );
-    const root = await initializedProject("grandchild");
-    await withKimi(shimPath, async () => {
-      // Parent and grandchild share the process group; timeout SIGTERMs both.
-      await expect(
-        runProvider({ ...node, timeout_ms: 1_500 } as never, "p", root, 1000)
-      ).rejects.toMatchObject({ code: "PROVIDER_TIMEOUT" });
-    });
-    const lines = (await readFile(counterPath, "utf8")).trim().split("\n").filter(Boolean);
-    expect(lines).toHaveLength(1);
-  });
-
-  it("(7) only the lease holder may mark unknown (fold does not invent lease)", () => {
-    // Lease enforcement is directory-lease assertOwned; here we pin that fold
-    // never creates unknown without an explicit invocation_unknown event.
+    // Race: process already exited; terminate swallows ESRCH internally.
+    terminate?.("SIGTERM");
+    // Ledger adjudication: a finished invocation cannot be cancelled.
     const id = makeInvocationId("r", "n1", 1);
     const snap = foldInvocations([
       {
         type: "invocation_started",
-        metadata: { invocation_id: id, run_id: "r", node_id: "n1", attempt: 1, adapter: "fake" }
+        metadata: { invocation_id: id, run_id: "r", node_id: "n1", attempt: 1, adapter: "kimi" }
+      },
+      {
+        type: "invocation_finished",
+        metadata: {
+          invocation_id: id,
+          status: "failed",
+          failure_class: "quota",
+          duration_ms: 1
+        }
       }
     ] as never).get(id)!;
-    expect(snap.state).toBe("started");
-    expect(snap.prior_state).toBeNull();
+    expect(snap.state).toBe("finished_failed");
+    expect(() => assertCancellable(snap.state)).toThrowError(
+      expect.objectContaining({ code: "INVOCATION_ALREADY_TERMINAL" })
+    );
   });
 
-  it("(9) cancel_requested without kill folds to unknown on resume; no auto-replay", () => {
+  it("(5) grandchild is reaped: kill(pid,0) reports ESRCH after group timeout", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "rs-gc-"));
+    cleanup.push(dir);
+    const pidFile = path.join(dir, "grandchild.pid");
+    const counterPath = path.join(dir, "c.txt");
+    const shimPath = path.join(dir, "shim.sh");
+    await writeFile(
+      shimPath,
+      `#!/bin/sh\necho called >> '${counterPath}'\nsleep 30 &\necho $! > '${pidFile}'\nsleep 30\n`,
+      "utf8"
+    );
+    await chmod(shimPath, 0o755);
+    const root = await initializedProject("grandchild-esrch");
+    await withKimi(shimPath, async () => {
+      await expect(
+        runProvider({ ...node, timeout_ms: 1_500 } as never, "p", root, 1000)
+      ).rejects.toMatchObject({ code: "PROVIDER_TIMEOUT" });
+    });
+    const grandchildPid = Number((await readFile(pidFile, "utf8")).trim());
+    expect(grandchildPid).toBeGreaterThan(0);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(() => process.kill(grandchildPid, 0)).toThrowError(
+      expect.objectContaining({ code: "ESRCH" })
+    );
+  });
+
+  it("(7) dual coordinator: second concurrent resume hits RUN_ACTIVE lease", async () => {
+    const root = await initializedProject("dual-coordinator");
+    await writeFile(path.join(root, "n.md"), "x\n", "utf8");
+    await freezePacket(root, "pkt-dual", ["n.md"]);
+    const plan = {
+      version: 1,
+      name: "dual",
+      packet_id: "pkt-dual",
+      mode: "open",
+      limits: {
+        max_parallel: 1,
+        max_wall_time_ms: 1_800_000,
+        max_prompt_chars: 20_000,
+        max_output_chars: 10_000,
+        retry_limit: 0,
+        max_failures: 1
+      },
+      nodes: [
+        {
+          id: "n1",
+          actor_id: "a1",
+          role: "analyst",
+          adapter: "kimi",
+          model: "kimi-latest",
+          brief: "b",
+          depends_on: [],
+          visibility: "shared",
+          can_adjudicate: false,
+          timeout_ms: 8_000
+        }
+      ]
+    } as never;
+    const { shimPath } = await shim("sleep 3\nexit 1\n");
+    await withKimi(shimPath, async () => {
+      const a = runRoundtable(root, plan, "dual-run");
+      await sleep(150);
+      const b = runRoundtable(root, plan, "dual-run");
+      const results = await Promise.allSettled([a, b]);
+      const rejected = results.filter((r) => r.status === "rejected");
+      expect(rejected.length).toBeGreaterThanOrEqual(1);
+      const codes = rejected.map(
+        (r) => (r as PromiseRejectedResult).reason as { code?: string }
+      );
+      expect(codes.some((c) => c.code === "RUN_ACTIVE")).toBe(true);
+    });
+  });
+
+  it("(9) unknown has no auto-replay without explicit authorization event", () => {
     const id = makeInvocationId("r", "n1", 1);
-    const events = [
+    const unknown = foldInvocations([
       {
         type: "invocation_started",
         metadata: { invocation_id: id, run_id: "r", node_id: "n1", attempt: 1, adapter: "kimi" }
@@ -191,11 +256,15 @@ describe("CR-M-060 residual scenarios", () => {
           prior_state: "cancel_requested"
         }
       }
-    ] as never;
-    const snap = foldInvocations(events as never).get(id)!;
-    expect(snap.state).toBe("unknown");
-    expect(snap.prior_state).toBe("cancel_requested");
-    expect(allowsAutoReplay(snap, { resume_policy: "never" })).toBe(false);
-    expect(allowsAutoReplay(snap, { resume_policy: "fake_only" })).toBe(false);
+    ] as never).get(id)!;
+    expect(unknown.state).toBe("unknown");
+    expect(unknown.replay_authorized).toBe(false);
+    expect(allowsAutoReplay(unknown, { resume_policy: "explicit" })).toBe(false);
+    // Process half (orphan harvest) depends on workflow writing
+    // cancel_requested + terminate; covered by scenario (3)/(5) group kill.
   });
 });
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
