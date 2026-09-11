@@ -35,7 +35,7 @@ async function main() {
     )
   );
   process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
-  process.exit(failed.length === 0 ? 0 : 1);
+  process.exitCode = failed.length === 0 ? 0 : 1;
 }
 
 main().catch((error) => {
