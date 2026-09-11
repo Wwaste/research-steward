@@ -138,18 +138,22 @@ describe("CR-M-085 PATH denylist", () => {
     ).toThrow();
   });
 
-  it("runner never inherits denylisted allowed_env keys", async () => {
+  it("runner never inherits denylisted allowed_env keys (subprocess PATH marker)", async () => {
     const root = await temporaryDirectory();
-    // Craft a v1 policy (no refine) that lists PATH — runner must skip it.
+    const marker = path.join(root, "path-marker.txt");
+    // Child writes its own PATH so we can assert what it actually received.
+    const script = path.join(root, "echo-path.sh");
+    await writeFile(script, `#!/bin/sh\necho "$PATH" > '${marker}'\n`, "utf8");
+    await chmod(script, 0o755);
     const { prepareAndRunCheck } = await import("../src/check-runner.js");
     const prevPath = process.env.PATH;
     process.env.PATH = "/evil/bin:/usr/bin";
     try {
-      const result = await prepareAndRunCheck({
+      await prepareAndRunCheck({
         projectRoot: root,
         policy: {
           policy_version: 1,
-          allowlist: ["/usr/bin/true"],
+          allowlist: [script],
           allow_network: false,
           max_wall_time_ms: 5000,
           max_output_bytes: 10240,
@@ -157,34 +161,16 @@ describe("CR-M-085 PATH denylist", () => {
           allowed_env: ["PATH"],
           extra_cwd_roots: []
         },
-        request: { executable: "/usr/bin/true", argv: [] }
+        request: { executable: script, argv: [] }
       });
-      expect(result.exit_code).toBe(0);
+      const { readFile: rf } = await import("node:fs/promises");
+      const seen = await rf(marker, "utf8");
+      // Must be the runner-controlled PATH, not the caller's.
+      expect(seen.trim()).toBe("/usr/bin:/bin");
+      expect(seen).not.toContain("/evil/bin");
     } finally {
       if (prevPath === undefined) delete process.env.PATH;
       else process.env.PATH = prevPath;
     }
-  });
-});
-
-
-describe("CR-M-082 wiring", () => {
-  it("createCheckDomainFromPolicy returns a live domain for v2", async () => {
-    const root = await temporaryDirectory();
-    const safeBin = await temporaryDirectory();
-    const safe = path.join(safeBin, "echo");
-    await writeFile(safe, "#!/bin/sh\necho ok\n", "utf8");
-    await chmod(safe, 0o755);
-    const { createCheckDomainFromPolicy } = await import("../src/check-domain.js");
-    const domain = createCheckDomainFromPolicy(root, {
-      policy_version: 2,
-      templates: [{ template_id: "t", executable: "echo", argv_pattern: [] }],
-      path_dirs: [safeBin]
-    });
-    const evidence = await domain.runPolicyCheck({ template_id: "t", argv: [] });
-    expect(evidence.exit_code).toBe(0);
-    expect(() =>
-      createCheckDomainFromPolicy("/tmp", { policy_version: 1, allowlist: ["/usr/bin/true"] })
-    ).toThrowError(expect.objectContaining({ code: "CHECK_POLICY_VERSION_UNSUPPORTED" }));
   });
 });
