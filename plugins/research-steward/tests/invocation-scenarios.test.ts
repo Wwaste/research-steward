@@ -145,7 +145,7 @@ describe("CR-M-060 residual scenarios", () => {
   it("(5) detached grandchild is killed with the process group", async () => {
     // Background a sleep child, then exit — group kill should reap it.
     const { shimPath, counterPath } = await shim(
-      "(sleep 30 &) \necho 'quota exceeded' >&2\nexit 1\n"
+      "sleep 30 &\necho 'quota exceeded' >&2\nexit 1\n"
     );
     const root = await initializedProject("grandchild");
     await withKimi(shimPath, async () => {
