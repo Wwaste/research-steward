@@ -327,3 +327,49 @@ export function assertEnvAllowed(policy: CheckPolicyV2, key: string): void {
     );
   }
 }
+
+
+/** CR-M-064: resolve a bare executable name only inside path_dirs. */
+export async function resolveExecutableInPathDirs(
+  policy: CheckPolicyV2,
+  name: string
+): Promise<string> {
+  if (name.includes("/") || name.includes("\\")) {
+    throw new ResearchStewardError(
+      "CHECK_EXECUTABLE_UNRESOLVED",
+      "Bare executable names only; use templates for absolute paths."
+    );
+  }
+  const { access, realpath } = await import("node:fs/promises");
+  const { constants } = await import("node:fs");
+  for (const dir of policy.path_dirs) {
+    const candidate = path.join(dir, name);
+    try {
+      await access(candidate, constants.X_OK);
+      return await realpath(candidate);
+    } catch {
+      // try next
+    }
+  }
+  throw new ResearchStewardError(
+    "CHECK_EXECUTABLE_UNRESOLVED",
+    "Executable not found in path_dirs.",
+    { name }
+  );
+}
+
+/** CR-M-064: extra_cwd_roots tolerate missing roots (skip, do not throw). */
+export async function usableExtraCwdRoots(
+  policy: CheckPolicyV2
+): Promise<string[]> {
+  const { realpath } = await import("node:fs/promises");
+  const out: string[] = [];
+  for (const root of policy.extra_cwd_roots) {
+    try {
+      out.push(await realpath(root));
+    } catch {
+      // skip missing
+    }
+  }
+  return out;
+}

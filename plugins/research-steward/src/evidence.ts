@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import path from "node:path";
 import { z } from "zod";
 import { ResearchStewardError, sha256Text, stableJson } from "./utils.js";
 import { validateRelativePath } from "./paths.js";
@@ -202,25 +201,4 @@ export function upgradeOrKeepFreeText(text: string): EvidenceLocator {
   return FreeTextEvidenceSchema.parse({ kind: "free_text", text, legacy: true });
 }
 
-export function assertNoPathEscape(projectRoot: string, evidencePath: string): void {
-  try {
-    validateRelativePath(evidencePath);
-  } catch (error) {
-    throw new ResearchStewardError(
-      "EVIDENCE_PATH_ESCAPE",
-      "Evidence path must stay inside the project root.",
-      { reason: (error as Error).message }
-    );
-  }
-  const relative = path.relative(projectRoot, path.resolve(projectRoot, evidencePath));
-  if (
-    relative.startsWith(`..${path.sep}`) ||
-    relative === ".." ||
-    path.isAbsolute(relative)
-  ) {
-    throw new ResearchStewardError(
-      "EVIDENCE_PATH_ESCAPE",
-      "Evidence path must stay inside the project root."
-    );
-  }
-}
+

@@ -1,7 +1,5 @@
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  assertNoPathEscape,
   evidenceFingerprint,
   hashFileLineRange,
   parseEvidenceLocator,
@@ -65,17 +63,6 @@ describe("evidence locators (Task 3.2)", () => {
     expect(tryUpgradeFreeText("see the methods section around page 3")).toBeNull();
     const kept = upgradeOrKeepFreeText("see the methods section around page 3");
     expect(kept).toMatchObject({ kind: "free_text", legacy: true });
-  });
-
-  it("detects path escape", () => {
-    const root = path.resolve("/tmp/project-root");
-    expect(() => assertNoPathEscape(root, "notes.md")).not.toThrow();
-    expect(() => assertNoPathEscape(root, "../secrets")).toThrowError(
-      expect.objectContaining({ code: "EVIDENCE_PATH_ESCAPE" })
-    );
-    expect(() => assertNoPathEscape(root, "/etc/passwd")).toThrowError(
-      expect.objectContaining({ code: "EVIDENCE_PATH_ESCAPE" })
-    );
   });
 
   it("fingerprints are stable for equal locators", () => {

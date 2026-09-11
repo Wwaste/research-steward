@@ -97,8 +97,14 @@ describe("invocation §5 scenarios", () => {
         // quota failure expected
       }
     });
-    const { readFile: rf } = await import("node:fs/promises");
+    const { readFile: rf, cp, mkdir: mk } = await import("node:fs/promises");
     await expect(rf(marker, "utf8")).resolves.toContain("ran");
+    // Falsifiable: copy ledger events into marker dir while shim "runs".
+    const copyDir = path.join(dir, "events-copy");
+    await mk(copyDir, { recursive: true });
+    await cp(path.join(root, ".research", "events"), copyDir, { recursive: true });
+    const copied = (await import("node:fs/promises")).readdir(copyDir);
+    expect((await copied).length).toBeGreaterThan(0);
     const events = await readEvents(root);
     const started = events.find((e) => e.type === "invocation_started");
     const finished = events.find((e) => e.type === "invocation_finished");

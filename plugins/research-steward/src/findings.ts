@@ -54,6 +54,25 @@ export function isLegalFindingTransition(from: FindingFoldState, to: FindingFold
   return ALLOWED[from].includes(to);
 }
 
+function extractLocatorPath(finding: unknown): string | null {
+  if (finding === null || typeof finding !== "object") return null;
+  const f = finding as { evidence?: unknown; locator?: unknown };
+  if (Array.isArray(f.evidence)) {
+    for (const e of f.evidence) {
+      if (e !== null && typeof e === "object") {
+        const ev = e as { kind?: unknown; locator?: unknown };
+        if (ev.kind === "structured" && ev.locator !== null && typeof ev.locator === "object") {
+          const loc = (ev.locator as { path?: unknown }).path;
+          if (typeof loc === "string") return loc;
+        }
+        if (typeof ev.locator === "string") return ev.locator;
+      }
+    }
+  }
+  if (typeof f.locator === "string") return f.locator;
+  return null;
+}
+
 function key(findingEventId: string, findingId: string): string {
   return `${findingEventId}:${findingId}`;
 }
@@ -90,12 +109,14 @@ export function foldFindings(events: readonly CommittedEvent[]): Map<string, Fin
             typeof d === "object" &&
             (d as { finding_id?: unknown }).finding_id === f.id
         ) as { disposition?: string } | undefined;
+        const disposition = matching?.disposition;
         const initState =
-          event.type === "adjudication" && matching?.disposition === "accept"
+          event.type === "adjudication" &&
+          (disposition === "accept" || disposition === "partial")
             ? "open"
-            : event.type === "adjudication" && matching?.disposition === "reject"
+            : event.type === "adjudication" && disposition === "reject"
               ? "rejected"
-              : event.type === "adjudication" && matching?.disposition === "defer"
+              : event.type === "adjudication" && disposition === "defer"
                 ? "deferred"
                 : "reported";
         map.set(
@@ -107,11 +128,7 @@ export function foldFindings(events: readonly CommittedEvent[]): Map<string, Fin
             severity: f.severity ?? "info",
             claim: typeof f.claim === "string" ? f.claim : "",
             state: initState,
-            locator_path:
-              structured?.locator?.path ??
-              typeof (finding as { locator?: unknown }).locator === "string"
-                ? (finding as unknown as { locator: string }).locator
-                : null
+            locator_path: extractLocatorPath(finding)
           })
         );
       }
@@ -143,12 +160,12 @@ export function foldFindings(events: readonly CommittedEvent[]): Map<string, Fin
           : reopen
             ? null
             : event.actor.id,
-        remediation_evidence_fingerprints: reopen
+        remediation_evidence_fingerprints: reopen && !reconfirm
           ? []
           : Array.isArray(meta["remediation_evidence_fingerprints"])
             ? (meta["remediation_evidence_fingerprints"] as string[])
             : existing.remediation_evidence_fingerprints,
-        fixed_in_packet_id: reopen
+        fixed_in_packet_id: reopen && !reconfirm
           ? null
           : typeof meta["fixed_in_packet_id"] === "string"
             ? (meta["fixed_in_packet_id"] as string)
