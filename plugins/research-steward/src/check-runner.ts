@@ -57,8 +57,9 @@ export async function prepareAndRunCheck(options: RunCheckOptions): Promise<Chec
   authorizeCheckRequest(options.policy, prepared, projectRoot, realpathOfSync);
 
   const timeoutMs = prepared.timeout_ms ?? options.policy.max_wall_time_ms;
+  // CR-M-079: never inherit the caller PATH for spawned checks.
   const env: Record<string, string> = {
-    PATH: process.env["PATH"] ?? "/usr/bin:/bin",
+    PATH: "/usr/bin:/bin",
     LANG: "C.UTF-8",
     LC_ALL: "C.UTF-8",
     HOME: projectRoot,

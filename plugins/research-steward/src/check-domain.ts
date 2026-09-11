@@ -6,6 +6,7 @@ import {
   type CommandTemplate
 } from "./command-policy.js";
 import { prepareAndRunCheck } from "./check-runner.js";
+import { resolveExecutableInPathDirs } from "./check-policy.js";
 import { ResearchStewardError, sha256Text, stableJson } from "./utils.js";
 
 /**
@@ -74,13 +75,19 @@ export function createCheckDomain(
         policy.max_wall_time_ms
       );
 
+      // CR-M-079: resolve bare names via path_dirs to an absolute path; never
+      // pass a bare name to spawn (PATH hijack).
+      const executableAbsolute = path.isAbsolute(template.executable)
+        ? template.executable
+        : await resolveExecutableInPathDirs(policy, template.executable);
+
       // Bridge to the existing check-runner for the actual spawn (process
       // group + wall clock). Template executable is the only allowed binary.
       const result = await prepareAndRunCheck({
         projectRoot,
         policy: {
           policy_version: 1,
-          allowlist: [template.executable],
+          allowlist: [executableAbsolute],
           allow_network: template.allow_network,
           max_wall_time_ms: timeoutMs,
           max_output_bytes: policy.max_output_bytes,
@@ -89,7 +96,7 @@ export function createCheckDomain(
           extra_cwd_roots: policy.extra_cwd_roots
         },
         request: {
-          executable: template.executable,
+          executable: executableAbsolute,
           argv: [...request.argv],
           ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
           ...(request.env === undefined ? {} : { env: request.env }),

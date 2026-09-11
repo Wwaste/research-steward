@@ -1,5 +1,5 @@
 import path from "node:path";
-import { realpathSync } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import { z } from "zod";
 import { ResearchStewardError } from "./utils.js";
 
@@ -141,7 +141,20 @@ export const ArgPatternSchema = z.discriminatedUnion("kind", [
       within: z.enum(["project_root", "extra_root"])
     })
     .strict(),
-  z.object({ kind: z.literal("regex"), pattern: z.string().max(500) }).strict()
+  z.object({ kind: z.literal("regex"), pattern: z.string().max(500) })
+    .strict()
+    .refine(
+      (v) => {
+        try {
+          new RegExp(v.pattern);
+        } catch {
+          return false;
+        }
+        if (/\([^)]*[+*][^)]*\)[+*]/.test(v.pattern)) return false;
+        return true;
+      },
+      { message: "regex must compile and must not contain nested quantifiers" }
+    )
 ]);
 
 export type ArgPattern = z.infer<typeof ArgPatternSchema>;
@@ -224,19 +237,20 @@ export function matchArgPattern(
         if (relative.startsWith("..") || path.isAbsolute(relative)) return false;
         const realRoot = realpathSync(projectRoot);
         // realpath deepest existing ancestor; re-append missing tail.
+        // CR-M-080: reject any symlink among existing ancestors or the leaf.
+        const realRoot = realpathSync(projectRoot);
         let current = resolved;
-        const tail: string[] = [];
         for (;;) {
           try {
+            const st = lstatSync(current);
+            if (st.isSymbolicLink()) return false;
             const real = realpathSync(current);
-            const realFull = path.join(real, ...tail);
-            const realRel = path.relative(realRoot, realFull);
+            const realRel = path.relative(realRoot, real);
             if (realRel.startsWith("..") || path.isAbsolute(realRel)) return false;
             break;
           } catch {
             const parent = path.dirname(current);
             if (parent === current) return false;
-            tail.unshift(path.basename(current));
             current = parent;
           }
         }
@@ -372,4 +386,10 @@ export async function usableExtraCwdRoots(
     }
   }
   return out;
+}
+
+
+/** CR-M-082: single production entry for v1/v2 policy documents. */
+export function loadCheckPolicy(raw: unknown): CheckPolicyAny {
+  return CheckPolicyAnySchema.parse(raw);
 }

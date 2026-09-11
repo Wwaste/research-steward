@@ -11,6 +11,8 @@ export {
   authorizeTemplateRequest,
   isDenylistedEnvKey,
   matchArgPattern,
+  resolveExecutableInPathDirs,
+  usableExtraCwdRoots,
   type ArgPattern,
   type CheckPolicyV2,
   type CommandTemplate
