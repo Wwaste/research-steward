@@ -21,6 +21,7 @@ import {
   verifyProject
 } from "./store.js";
 import { runRoundtable } from "./workflow.js";
+import { authorizeReplay } from "./invocations.js";
 import { runDoctor } from "./doctor.js";
 import { buildPlan, writeLock, writePlanAndLock } from "./planner.js";
 import { buildForecast } from "./forecast.js";
@@ -437,6 +438,39 @@ export function buildServer(policy: RootPolicy): McpServer {
     async ({ project_root, actor_id, blocked_event_ids, note }) =>
       withProject(policy, project_root, (root) =>
         resolveBlocks(root, actor_id, blocked_event_ids, note)
+      )
+  );
+
+  server.registerTool(
+    "research_authorize_replay",
+    {
+      title: "Authorize Invocation Replay",
+      description:
+        "Human authority authorizes replaying one unknown paid invocation on a specific target attempt. The authorization is consumed when that attempt starts.",
+      inputSchema: {
+        project_root: z.string().min(1).max(4_096),
+        run_id: z.string().min(1).max(64),
+        invocation_id: z.string().regex(/^[a-f0-9]{32}$/),
+        authority: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/),
+        target_attempt: z.number().int().min(2),
+        note: z.string().max(2_000).optional()
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false
+      }
+    },
+    async ({ project_root, run_id, invocation_id, authority, target_attempt, note }) =>
+      withProject(policy, project_root, (root) =>
+        authorizeReplay(root, {
+          run_id,
+          invocation_id,
+          authority,
+          target_attempt,
+          ...(note !== undefined ? { note } : {})
+        })
       )
   );
 

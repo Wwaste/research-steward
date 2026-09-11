@@ -72376,6 +72376,38 @@ var InvocationReplayAuthorizedPayloadSchema = external_exports.object({
   note: external_exports.string().max(2e3).optional(),
   target_attempt: external_exports.number().int().min(1).optional()
 }).strict();
+async function authorizeReplay(root, input2) {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(input2.authority)) {
+    throw new ResearchStewardError(
+      "INVALID_AUTHORITY",
+      "Authority must be a simple identifier."
+    );
+  }
+  if (!Number.isInteger(input2.target_attempt) || input2.target_attempt < 2) {
+    throw new ResearchStewardError(
+      "INVALID_TARGET_ATTEMPT",
+      "target_attempt must be an integer >= 2."
+    );
+  }
+  InvocationReplayAuthorizedPayloadSchema.parse({
+    invocation_id: input2.invocation_id,
+    authority: input2.authority,
+    target_attempt: input2.target_attempt,
+    ...input2.note !== void 0 ? { note: input2.note } : {}
+  });
+  return appendEvent(root, {
+    type: "invocation_replay_authorized",
+    run_id: input2.run_id,
+    actor: { id: input2.authority, role: "authority" },
+    summary: `Replay authorized for ${input2.invocation_id} \u2192 attempt ${input2.target_attempt}.`,
+    metadata: {
+      invocation_id: input2.invocation_id,
+      authority: input2.authority,
+      target_attempt: input2.target_attempt,
+      ...input2.note !== void 0 ? { note: input2.note } : {}
+    }
+  });
+}
 
 // src/budget-permits.ts
 import { randomUUID as randomUUID4 } from "node:crypto";
@@ -75718,6 +75750,38 @@ function buildServer(policy) {
       policy,
       project_root,
       (root) => resolveBlocks(root, actor_id, blocked_event_ids, note)
+    )
+  );
+  server.registerTool(
+    "research_authorize_replay",
+    {
+      title: "Authorize Invocation Replay",
+      description: "Human authority authorizes replaying one unknown paid invocation on a specific target attempt. The authorization is consumed when that attempt starts.",
+      inputSchema: {
+        project_root: external_exports.string().min(1).max(4096),
+        run_id: external_exports.string().min(1).max(64),
+        invocation_id: external_exports.string().regex(/^[a-f0-9]{32}$/),
+        authority: external_exports.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/),
+        target_attempt: external_exports.number().int().min(2),
+        note: external_exports.string().max(2e3).optional()
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false
+      }
+    },
+    async ({ project_root, run_id, invocation_id, authority, target_attempt, note }) => withProject(
+      policy,
+      project_root,
+      (root) => authorizeReplay(root, {
+        run_id,
+        invocation_id,
+        authority,
+        target_attempt,
+        ...note !== void 0 ? { note } : {}
+      })
     )
   );
   server.registerTool(

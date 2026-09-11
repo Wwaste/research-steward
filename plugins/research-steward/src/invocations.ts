@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { FailureClassSchema, type FailureClass } from "./provider-failure.js";
 import { IdentifierSchema, type CommittedEvent } from "./protocol.js";
+import { appendEvent } from "./store.js";
 import { ResearchStewardError } from "./utils.js";
 
 /**
@@ -310,3 +311,50 @@ export const InvocationReplayAuthorizedPayloadSchema = z
     target_attempt: z.number().int().min(1).optional()
   })
   .strict();
+
+/**
+ * CR-M-071 production emitter: human authority authorizes replaying an
+ * unknown invocation on a specific target attempt. CLI and MCP call this;
+ * tests may still append the event directly when seeding fixtures.
+ */
+export async function authorizeReplay(
+  root: string,
+  input: {
+    run_id: string;
+    invocation_id: string;
+    authority: string;
+    target_attempt: number;
+    note?: string;
+  }
+): Promise<CommittedEvent> {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(input.authority)) {
+    throw new ResearchStewardError(
+      "INVALID_AUTHORITY",
+      "Authority must be a simple identifier."
+    );
+  }
+  if (!Number.isInteger(input.target_attempt) || input.target_attempt < 2) {
+    throw new ResearchStewardError(
+      "INVALID_TARGET_ATTEMPT",
+      "target_attempt must be an integer >= 2."
+    );
+  }
+  InvocationReplayAuthorizedPayloadSchema.parse({
+    invocation_id: input.invocation_id,
+    authority: input.authority,
+    target_attempt: input.target_attempt,
+    ...(input.note !== undefined ? { note: input.note } : {})
+  });
+  return appendEvent(root, {
+    type: "invocation_replay_authorized",
+    run_id: input.run_id,
+    actor: { id: input.authority, role: "authority" },
+    summary: `Replay authorized for ${input.invocation_id} → attempt ${input.target_attempt}.`,
+    metadata: {
+      invocation_id: input.invocation_id,
+      authority: input.authority,
+      target_attempt: input.target_attempt,
+      ...(input.note !== undefined ? { note: input.note } : {})
+    }
+  });
+}

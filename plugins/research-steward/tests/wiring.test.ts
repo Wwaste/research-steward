@@ -35,15 +35,20 @@ function firstJson(result: unknown): unknown {
 }
 
 describe("phase 1 wiring (doctor, build-plan, dry-run)", () => {
-  it("advertises exactly 16 MCP tools including the three new ones", async () => {
+  it("advertises exactly 17 MCP tools including authorize_replay", async () => {
     const root = await initializedProject("Wiring inventory");
     const { client, close } = await connectedClient(root);
     try {
       const tools = await client.listTools();
       const names = tools.tools.map((tool) => tool.name);
-      expect(tools.tools).toHaveLength(16);
+      expect(tools.tools).toHaveLength(17);
       expect(names).toEqual(
-        expect.arrayContaining(["research_doctor", "research_build_plan", "research_dry_run"])
+        expect.arrayContaining([
+          "research_doctor",
+          "research_build_plan",
+          "research_dry_run",
+          "research_authorize_replay"
+        ])
       );
     } finally {
       await close();

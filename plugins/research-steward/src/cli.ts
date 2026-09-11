@@ -15,6 +15,7 @@ import {
   verifyProject
 } from "./store.js";
 import { runRoundtable } from "./workflow.js";
+import { authorizeReplay } from "./invocations.js";
 import { runHttpServer } from "./server.js";
 import { packageHandoff } from "./package.js";
 import { errorMessage, writeImmutableFile } from "./utils.js";
@@ -245,6 +246,15 @@ async function main(): Promise<void> {
         all(parsed.flags, "event"),
         one(parsed.flags, "note", "Recorded explicit block resolution.")
       );
+      break;
+    case "authorize-replay":
+      result = await authorizeReplay(root, {
+        run_id: one(parsed.flags, "run-id"),
+        invocation_id: one(parsed.flags, "invocation"),
+        authority: one(parsed.flags, "authority"),
+        target_attempt: Number(one(parsed.flags, "target-attempt")),
+        ...(parsed.flags.has("note") ? { note: one(parsed.flags, "note") } : {})
+      });
       break;
     case "package":
       result = await packageHandoff(root, one(parsed.flags, "package"), all(parsed.flags, "file"));
