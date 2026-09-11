@@ -195,6 +195,8 @@ export const CheckPolicyAnySchema = z.discriminatedUnion("policy_version", [
 export type CheckPolicyAny = z.infer<typeof CheckPolicyAnySchema>;
 
 export const ENV_DENYLIST_PREFIXES = [
+  // CR-M-085: caller PATH is never allowed — check-runner sets a controlled PATH.
+  "PATH",
   "LD_",
   "DYLD_",
   "NODE_OPTIONS",

@@ -125,3 +125,19 @@ describe("CR-M-084 path_dirs realpath fence", () => {
     expect(evidence.exit_code).toBe(0);
   });
 });
+
+
+describe("CR-M-085 PATH denylist", () => {
+  it("rejects PATH in allowed_env even if configured", async () => {
+    const root = await temporaryDirectory();
+    const policy = CheckPolicyV2Schema.parse({
+      policy_version: 2,
+      templates: [{ template_id: "t", executable: "/bin/true", argv_pattern: [] }],
+      allowed_env: ["PATH"]
+    });
+    const { assertEnvAllowed } = await import("../src/check-policy.js");
+    expect(() => assertEnvAllowed(policy, "PATH")).toThrowError(
+      expect.objectContaining({ code: "CHECK_ENV_DENYLISTED" })
+    );
+  });
+});
