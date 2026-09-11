@@ -182,3 +182,33 @@ describe("CR-M-074 R1 contract", () => {
     expect(r.needs_human_adjudication).toBe(true);
   });
 });
+
+
+describe("CR-M-074 remainder", () => {
+  it("rejects duplicate hypothesis ids and illegal discriminant", async () => {
+    expect(() =>
+      parseResearchContract(
+        baseContract({
+          analysis_class: "confirmatory",
+          hypotheses: [
+            { hypothesis_id: "h1", statement: "a", linked_outcome: "o" },
+            { hypothesis_id: "h1", statement: "b", linked_outcome: "o" }
+          ]
+        })
+      )
+    ).toThrow();
+    expect(() =>
+      parseResearchContract(baseContract({ data_cut: { label: "c", locator: { kind: "nope" } } }))
+    ).toThrow();
+  });
+
+  it("assertScopeDeclarationChecked fails without checker event", async () => {
+    const { assertScopeDeclarationChecked } = await import("../src/research-contract.js");
+    expect(() =>
+      assertScopeDeclarationChecked({ declaration_present: true, checker_event_present: false })
+    ).toThrowError(expect.objectContaining({ code: "SCOPE_DECLARATION_UNCHECKED" }));
+    expect(() =>
+      assertScopeDeclarationChecked({ declaration_present: true, checker_event_present: true })
+    ).not.toThrow();
+  });
+});

@@ -197,6 +197,10 @@ export function assertContractUnchanged(
   }
 }
 
+/**
+ * Deprecated (CR-M-074 R1.1): boolean API superseded by evaluateScopeDrift
+ * machine-hint layer. Kept as a thin wrapper for existing callers.
+ */
 export function detectScopeDrift(
   contract: ResearchContract,
   claimText: string
@@ -283,4 +287,21 @@ export function evaluateScopeDrift(
     machine_hints: hints,
     needs_human_adjudication: hints.some((h) => h !== "declaration-has-acknowledged-limits")
   };
+}
+
+
+/**
+ * CR-M-074: verify precheck — a scope declaration must have been reviewed
+ * by a checker event before acceptance can proceed.
+ */
+export function assertScopeDeclarationChecked(input: {
+  declaration_present: boolean;
+  checker_event_present: boolean;
+}): void {
+  if (input.declaration_present && !input.checker_event_present) {
+    throw new ResearchStewardError(
+      "SCOPE_DECLARATION_UNCHECKED",
+      "A scope declaration exists but no checker event has reviewed it."
+    );
+  }
 }
