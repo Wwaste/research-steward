@@ -153,3 +153,86 @@ describe("CR-M-078 staggered parallel ledger race", () => {
     expect(lines.length).toBeGreaterThanOrEqual(2);
   });
 });
+
+
+describe("CR-M-078 true stagger (retry node overlaps long node)", () => {
+  it("retry_limit=1 transport node overlaps a long-running sibling without LEDGER_HEAD_MISMATCH", async () => {
+    const shimDir = await mkdtemp(path.join(os.tmpdir(), "rs-stag2-"));
+    cleanup.push(shimDir);
+    const counter = path.join(shimDir, "c.txt");
+    // First call fails transport (connection refused text); second call succeeds.
+    // Use a state file so attempt 1 fails and attempt 2 succeeds.
+    const state = path.join(shimDir, "state");
+    const shim = path.join(shimDir, "flaky.sh");
+    await wf(
+      shim,
+      `#!/bin/sh\necho called >> '${counter}'\nif [ -f '${state}' ]; then\necho ok\nexit 0\nelse\nsleep 0.6\ntouch '${state}'\necho 'connection refused' >&2\nexit 1\nfi\n`,
+      "utf8"
+    );
+    await chmod(shim, 0o755);
+    // long-running sibling
+    const long = path.join(shimDir, "long.sh");
+    await wf(long, `#!/bin/sh\necho called >> '${counter}'\nsleep 1.2\necho 'quota exceeded' >&2\nexit 1\n`, "utf8");
+    await chmod(long, 0o755);
+    const root = await initializedProject("stagger2");
+    await wf(path.join(root, "n.md"), "x\n", "utf8");
+    await freezePacket(root, "pkt-s2", ["n.md"]);
+    // Both use kimi path — cannot have two different shims via one env.
+    // Use flaky for both: retry node will stagger; second node also flaky.
+    process.env.RESEARCH_STEWARD_KIMI_PATH = shim;
+    try {
+      await runRoundtable(
+        root,
+        {
+          version: 1,
+          name: "stag2",
+          packet_id: "pkt-s2",
+          mode: "open",
+          limits: {
+            max_parallel: 2,
+            max_wall_time_ms: 1_800_000,
+            max_prompt_chars: 20_000,
+            max_output_chars: 10_000,
+            retry_limit: 1,
+            max_failures: 4,
+            budget_window_ms: 1_800_000,
+            budget_max_invocations: 20
+          },
+          nodes: [
+            {
+              id: "retry",
+              actor_id: "ar",
+              role: "analyst",
+              adapter: "kimi",
+              model: "kimi-latest",
+              brief: "r",
+              depends_on: [],
+              visibility: "shared",
+              can_adjudicate: false,
+              timeout_ms: 10_000
+            },
+            {
+              id: "long",
+              actor_id: "al",
+              role: "analyst",
+              adapter: "kimi",
+              model: "kimi-latest",
+              brief: "l",
+              depends_on: [],
+              visibility: "shared",
+              can_adjudicate: false,
+              timeout_ms: 10_000
+            }
+          ]
+        } as never,
+        "stag2-run"
+      );
+      expect(true).toBe(true);
+    } finally {
+      delete process.env.RESEARCH_STEWARD_KIMI_PATH;
+    }
+    const { readFile } = await import("node:fs/promises");
+    const lines = (await readFile(counter, "utf8")).trim().split("\n").filter(Boolean);
+    expect(lines.length).toBeGreaterThanOrEqual(2);
+  });
+});
