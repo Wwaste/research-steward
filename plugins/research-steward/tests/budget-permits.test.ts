@@ -10,7 +10,7 @@ import { temporaryDirectory } from "./helpers.js";
 function startedEvent(adapter: string, created_at: string): CommittedEvent {
   return {
     type: "invocation_started",
-    created_at,
+    timestamp: created_at,
     metadata: { adapter, invocation_id: "a".repeat(32) }
   } as unknown as CommittedEvent;
 }

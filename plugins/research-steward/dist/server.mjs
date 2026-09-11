@@ -72229,6 +72229,9 @@ function foldInvocations(events) {
     const existing = map2.get(id);
     switch (event.type) {
       case "invocation_started": {
+        if (existing && (existing.state === "unknown" || existing.state === "finished_ok" || existing.state === "finished_failed" || existing.state === "cancelled")) {
+          break;
+        }
         map2.set(
           id,
           InvocationSnapshotSchema.parse({
@@ -72291,6 +72294,12 @@ function foldInvocations(events) {
     }
   }
   return map2;
+}
+function allowsAutoReplay(snapshot, opts) {
+  if (snapshot.state !== "unknown") return false;
+  if (opts.resume_policy === "never") return false;
+  if (opts.resume_policy === "fake_only") return snapshot.adapter === "fake";
+  return snapshot.replay_authorized;
 }
 
 // src/workflow.ts
@@ -72993,8 +73002,41 @@ async function runRoundtable(root, rawPlan, requestedRunId) {
         throw new ResearchStewardError("NO_RUNNABLE_NODES", "No runnable nodes remain; the plan or recovery log is inconsistent.");
       }
       const batch = runnable.slice(0, plan.limits.max_parallel);
+      const invFold = foldInvocations(events.filter((e) => e.run_id === runId));
+      const runnableSafe = [];
+      for (const node2 of batch) {
+        const nodeUnknown = [...invFold.values()].some(
+          (snap) => snap.node_id === node2.id && snap.state === "unknown" && !allowsAutoReplay(snap, { resume_policy: "explicit" })
+        );
+        if (nodeUnknown) {
+          await appendCoordinatorEvent(root, assertCoordinatorOwned, {
+            type: "agent_contribution",
+            run_id: runId,
+            actor: {
+              id: node2.actor_id,
+              role: node2.role,
+              adapter: node2.adapter
+            },
+            input_hash: packet.packet_hash,
+            visibility: node2.visibility,
+            status: "failed",
+            summary: `Node ${node2.id} has an unknown prior invocation and was not replayed.`,
+            uncertainties: [
+              "A prior attempt may already have spent budget; resume policy forbids automatic replay."
+            ],
+            metadata: {
+              node_id: node2.id,
+              blocked_by: "unknown_outcome",
+              error_code: "UNKNOWN_OUTCOME",
+              ...node2.blind_group ? { blind_group: node2.blind_group } : {}
+            }
+          });
+          continue;
+        }
+        runnableSafe.push(node2);
+      }
       await Promise.all(
-        batch.map(
+        runnableSafe.map(
           (node2) => runOneNode(
             root,
             plan,

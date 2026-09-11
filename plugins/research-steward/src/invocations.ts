@@ -85,6 +85,17 @@ export function foldInvocations(
     const existing = map.get(id);
     switch (event.type) {
       case "invocation_started": {
+        // CR-M-067: a new started event must not overwrite an existing
+        // terminal or unknown record (would erase incident evidence).
+        if (
+          existing &&
+          (existing.state === "unknown" ||
+            existing.state === "finished_ok" ||
+            existing.state === "finished_failed" ||
+            existing.state === "cancelled")
+        ) {
+          break;
+        }
         map.set(
           id,
           InvocationSnapshotSchema.parse({

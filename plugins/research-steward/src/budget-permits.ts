@@ -141,8 +141,9 @@ export function countPaidInvocationsInWindow(
     if (event.type !== "invocation_started") continue;
     const adapter = event.metadata["adapter"];
     if (typeof adapter !== "string" || !paidAdapters.includes(adapter)) continue;
-    const created = (event as { created_at?: string }).created_at;
-    if (typeof created === "string" && Date.parse(created) >= start) n += 1;
+    // CR-M-068: CommittedEvent production field is timestamp, not created_at.
+    const ts = (event as { timestamp?: string }).timestamp;
+    if (typeof ts === "string" && Date.parse(ts) >= start) n += 1;
   }
   return n;
 }

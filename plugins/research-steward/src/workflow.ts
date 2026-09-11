@@ -23,7 +23,7 @@ import {
   ensurePrivateDirectoryInside,
   resolvePrivateDestinationInside
 } from "./paths.js";
-import { foldInvocations, makeInvocationId } from "./invocations.js";
+import { allowsAutoReplay, foldInvocations, makeInvocationId } from "./invocations.js";
 import {
   ResearchStewardError,
   atomicWriteFile,
@@ -868,8 +868,46 @@ export async function runRoundtable(
       }
 
       const batch = runnable.slice(0, plan.limits.max_parallel);
+      // CR-M-067: never replay a paid call whose prior attempt is unknown
+      // unless an explicit invocation_replay_authorized event exists.
+      const invFold = foldInvocations(events.filter((e) => e.run_id === runId));
+      const runnableSafe: typeof batch = [];
+      for (const node of batch) {
+        const nodeUnknown = [...invFold.values()].some(
+          (snap) =>
+            snap.node_id === node.id &&
+            snap.state === "unknown" &&
+            !allowsAutoReplay(snap, { resume_policy: "explicit" })
+        );
+        if (nodeUnknown) {
+          await appendCoordinatorEvent(root, assertCoordinatorOwned, {
+            type: "agent_contribution",
+            run_id: runId,
+            actor: {
+              id: node.actor_id,
+              role: node.role,
+              adapter: node.adapter
+            },
+            input_hash: packet.packet_hash,
+            visibility: node.visibility,
+            status: "failed",
+            summary: `Node ${node.id} has an unknown prior invocation and was not replayed.`,
+            uncertainties: [
+              "A prior attempt may already have spent budget; resume policy forbids automatic replay."
+            ],
+            metadata: {
+              node_id: node.id,
+              blocked_by: "unknown_outcome",
+              error_code: "UNKNOWN_OUTCOME",
+              ...(node.blind_group ? { blind_group: node.blind_group } : {})
+            }
+          });
+          continue;
+        }
+        runnableSafe.push(node);
+      }
       await Promise.all(
-        batch.map((node) =>
+        runnableSafe.map((node) =>
           runOneNode(
             root,
             plan,
