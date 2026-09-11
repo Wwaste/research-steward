@@ -60772,6 +60772,17 @@ async function authorizeReplay(root, input2) {
       { invocation_id: input2.invocation_id, run_id: input2.run_id }
     );
   }
+  if (input2.target_attempt !== snap.attempt + 1) {
+    throw new ResearchStewardError(
+      "REPLAY_TARGET_MISMATCH",
+      `target_attempt must be ${snap.attempt + 1} (next after attempt ${snap.attempt}).`,
+      {
+        invocation_id: input2.invocation_id,
+        current_attempt: snap.attempt,
+        target_attempt: input2.target_attempt
+      }
+    );
+  }
   if (isTerminal(snap.state)) {
     throw new ResearchStewardError(
       "INVOCATION_ALREADY_TERMINAL",

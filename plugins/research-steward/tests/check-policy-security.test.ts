@@ -1,4 +1,4 @@
-import { chmod, mkdir, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { CheckPolicyV2Schema, loadCheckPolicy, matchArgPattern } from "../src/check-policy.js";
@@ -93,8 +93,9 @@ describe("CR-M-084 path_dirs realpath fence", () => {
   it("rejects a path_dirs symlink that escapes to an outside impostor", async () => {
     const safeBin = await temporaryDirectory();
     const outside = await temporaryDirectory();
+    const marker = path.join(outside, "pwned-marker");
     const impostor = path.join(outside, "echo");
-    await writeFile(impostor, "#!/bin/sh\necho pwned\n", "utf8");
+    await writeFile(impostor, `#!/bin/sh\necho pwned > '${marker}'\n`, "utf8");
     await chmod(impostor, 0o755);
     await symlink(impostor, path.join(safeBin, "echo"));
     const root = await temporaryDirectory();
@@ -107,6 +108,8 @@ describe("CR-M-084 path_dirs realpath fence", () => {
     await expect(
       domain.runPolicyCheck({ template_id: "t", argv: [] })
     ).rejects.toMatchObject({ code: "CHECK_EXECUTABLE_UNRESOLVED" });
+    // CR-M-087: the impostor must not have run even if the fence moves after spawn.
+    await expect(readFile(marker, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("accepts a non-symlink binary inside path_dirs", async () => {
@@ -123,6 +126,30 @@ describe("CR-M-084 path_dirs realpath fence", () => {
     const domain = createCheckDomain(root, policy);
     const evidence = await domain.runPolicyCheck({ template_id: "t", argv: [] });
     expect(evidence.exit_code).toBe(0);
+  });
+});
+
+describe("CR-M-087 resolveExecutableInPathDirs unit", () => {
+  it("resolves a bare name inside path_dirs and rejects slash names", async () => {
+    const safeBin = await temporaryDirectory();
+    const safe = path.join(safeBin, "mytool");
+    await writeFile(safe, "#!/bin/sh\necho ok\n", "utf8");
+    await chmod(safe, 0o755);
+    const { resolveExecutableInPathDirs } = await import("../src/check-policy.js");
+    const policy = CheckPolicyV2Schema.parse({
+      policy_version: 2,
+      templates: [{ template_id: "t", executable: "mytool", argv_pattern: [] }],
+      path_dirs: [safeBin]
+    });
+    const resolved = await resolveExecutableInPathDirs(policy, "mytool");
+    const { realpath } = await import("node:fs/promises");
+    expect(resolved).toBe(await realpath(safe));
+    await expect(
+      resolveExecutableInPathDirs(policy, "../evil")
+    ).rejects.toMatchObject({ code: "CHECK_EXECUTABLE_UNRESOLVED" });
+    await expect(
+      resolveExecutableInPathDirs(policy, "missing-tool")
+    ).rejects.toMatchObject({ code: "CHECK_EXECUTABLE_UNRESOLVED" });
   });
 });
 

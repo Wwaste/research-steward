@@ -372,7 +372,15 @@ export async function resolveExecutableInPathDirs(
   }
   const { access, realpath } = await import("node:fs/promises");
   const { constants } = await import("node:fs");
+  // /usr/local/bin is intentionally allowed: Homebrew and similar installers
+  // place operator-managed binaries there. Accepting it means an admin who can
+  // write /usr/local/bin can influence resolution — same trust level as
+  // installing a package. Narrower prefixes would break default Homebrew layouts.
   const SYSTEM_PREFIXES = ["/bin", "/sbin", "/usr/bin", "/usr/sbin", "/usr/local/bin"];
+  // Residual (CR-M-087 / #35): a hard link inside path_dirs can point at an
+  // inode whose realpath appears inside path_dirs while the original path
+  // lives elsewhere. realpath cannot distinguish hard links; this is accepted
+  // residual within the threat model (attacker needs write to path_dirs).
   for (const dir of policy.path_dirs) {
     const candidate = path.join(dir, name);
     try {

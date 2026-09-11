@@ -366,6 +366,18 @@ export async function authorizeReplay(
       { invocation_id: input.invocation_id, run_id: input.run_id }
     );
   }
+  // CR-M-090: reject wrong attempt numbers up front (narrow dead-letter).
+  if (input.target_attempt !== snap.attempt + 1) {
+    throw new ResearchStewardError(
+      "REPLAY_TARGET_MISMATCH",
+      `target_attempt must be ${snap.attempt + 1} (next after attempt ${snap.attempt}).`,
+      {
+        invocation_id: input.invocation_id,
+        current_attempt: snap.attempt,
+        target_attempt: input.target_attempt
+      }
+    );
+  }
   if (isTerminal(snap.state)) {
     throw new ResearchStewardError(
       "INVOCATION_ALREADY_TERMINAL",

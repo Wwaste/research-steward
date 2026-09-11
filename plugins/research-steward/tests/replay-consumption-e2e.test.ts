@@ -175,6 +175,23 @@ describe("CR-M-071 authorizeReplay fold-first entry (#45)", () => {
       )
     ).toHaveLength(1);
   });
+
+  it("rejects a target_attempt that is not snap.attempt+1 (CR-M-090)", async () => {
+    const root = await initializedProject("auth-mismatch");
+    await writeFile(path.join(root, "n.md"), "x\n", "utf8");
+    await freezePacket(root, "pkt-c", ["n.md"]);
+    const id = await seedCrashedStart(root, "mm-run", 1);
+    const before = (await readEvents(root)).length;
+    await expect(
+      authorizeReplay(root, {
+        run_id: "mm-run",
+        invocation_id: id,
+        authority: "human-lead",
+        target_attempt: 5
+      })
+    ).rejects.toMatchObject({ code: "REPLAY_TARGET_MISMATCH" });
+    expect((await readEvents(root)).length).toBe(before);
+  });
 });
 
 describe("CR-M-071 usable operator sequences", () => {
