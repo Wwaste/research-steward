@@ -223,10 +223,23 @@ export function matchArgPattern(
         const relative = path.relative(projectRoot, resolved);
         if (relative.startsWith("..") || path.isAbsolute(relative)) return false;
         const realRoot = realpathSync(projectRoot);
-        const realParent = realpathSync(path.dirname(resolved));
-        const real = path.join(realParent, path.basename(resolved));
-        const realRel = path.relative(realRoot, real);
-        if (realRel.startsWith("..") || path.isAbsolute(realRel)) return false;
+        // realpath deepest existing ancestor; re-append missing tail.
+        let current = resolved;
+        const tail: string[] = [];
+        for (;;) {
+          try {
+            const real = realpathSync(current);
+            const realFull = path.join(real, ...tail);
+            const realRel = path.relative(realRoot, realFull);
+            if (realRel.startsWith("..") || path.isAbsolute(realRel)) return false;
+            break;
+          } catch {
+            const parent = path.dirname(current);
+            if (parent === current) return false;
+            tail.unshift(path.basename(current));
+            current = parent;
+          }
+        }
       } catch {
         return false;
       }
