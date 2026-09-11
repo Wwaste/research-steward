@@ -33,6 +33,9 @@ export const InvocationSnapshotSchema = z
     failure_class: FailureClassSchema.nullable().default(null),
     stdout_sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null),
     replay_authorized: z.boolean().default(false),
+    /** CR-M-071: authorization binds the next attempt number only. */
+    replay_authorized_attempt: z.number().int().min(1).nullable().default(null),
+    replay_consumed: z.boolean().default(false),
     prior_state: z.enum(["started", "cancel_requested"]).nullable().default(null)
   })
   .strict();
@@ -112,6 +115,23 @@ export function foldInvocations(
             prior_state: null
           })
         );
+        // CR-M-071: a later attempt on the same run/node consumes a pending
+        // replay authorization on any prior unknown invocation.
+        const runId = strField(meta, "run_id") ?? event.run_id ?? "run";
+        const nodeId = strField(meta, "node_id") ?? "node";
+        const newAttempt = typeof meta["attempt"] === "number" ? meta["attempt"] : 1;
+        for (const [k, snap] of map) {
+          if (
+            k !== id &&
+            snap.run_id === runId &&
+            snap.node_id === nodeId &&
+            snap.state === "unknown" &&
+            snap.replay_authorized &&
+            snap.replay_authorized_attempt === newAttempt
+          ) {
+            map.set(k, { ...snap, replay_consumed: true, replay_authorized: false });
+          }
+        }
         break;
       }
       case "invocation_finished": {
@@ -157,7 +177,16 @@ export function foldInvocations(
       }
       case "invocation_replay_authorized": {
         if (!existing || existing.state !== "unknown") break;
-        map.set(id, { ...existing, replay_authorized: true });
+        const targetAttempt =
+          typeof meta["target_attempt"] === "number"
+            ? (meta["target_attempt"] as number)
+            : existing.attempt + 1;
+        map.set(id, {
+          ...existing,
+          replay_authorized: true,
+          replay_authorized_attempt: targetAttempt,
+          replay_consumed: false
+        });
         break;
       }
       default:
@@ -189,10 +218,19 @@ export function allowsAutoReplay(
   opts: { resume_policy: "never" | "fake_only" | "explicit" }
 ): boolean {
   if (snapshot.state !== "unknown") return false;
+  if (snapshot.replay_consumed) return false;
   if (opts.resume_policy === "never") return false;
   if (opts.resume_policy === "fake_only") return snapshot.adapter === "fake";
-  // explicit: only with a human authorization event
-  return snapshot.replay_authorized;
+  // explicit: authorization must bind the next attempt (CR-M-071)
+  return (
+    snapshot.replay_authorized &&
+    snapshot.replay_authorized_attempt === snapshot.attempt + 1
+  );
+}
+
+/** Next attempt number for a crashed/unknown invocation. */
+export function nextAttempt(snapshot: InvocationSnapshot): number {
+  return snapshot.attempt + 1;
 }
 
 export function isTerminal(state: InvocationFoldState): boolean {

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import { readFile } from "node:fs/promises";
 import {
   acquireDirectoryLease,
@@ -24,6 +25,10 @@ import {
   resolvePrivateDestinationInside
 } from "./paths.js";
 import { allowsAutoReplay, foldInvocations, makeInvocationId } from "./invocations.js";
+import {
+  acquirePermitSlot,
+  assertBudgetAllowsFromLedger
+} from "./budget-permits.js";
 import {
   ResearchStewardError,
   atomicWriteFile,
@@ -518,6 +523,26 @@ async function runOneNode(
     };
     attempts += 1;
     const invocationId = makeInvocationId(runId, node.id, attempts);
+    // CR-M-072: permit → budget → started → spawn
+    const runtimeRoot = path.join(root, ".research", "runtime");
+    const permit = await acquirePermitSlot({
+      runtimeRoot,
+      provider: node.adapter,
+      maxConcurrent: plan.limits.max_parallel,
+      staleMs: node.timeout_ms + 30_000
+    });
+    try {
+      const paidEvents = await readEvents(root);
+      assertBudgetAllowsFromLedger({
+        events: paidEvents,
+        window_start: new Date(Date.now() - plan.limits.max_wall_time_ms).toISOString(),
+        max_invocations: plan.limits.max_failures * 4 + plan.nodes.length * (plan.limits.retry_limit + 1),
+        provider: node.adapter
+      });
+    } catch (error) {
+      await permit.release();
+      throw error;
+    }
     // persist-before-spawn (DESIGN-INVOCATION-LEDGER step 4)
     await appendCoordinatorEvent(root, assertCoordinatorOwned, {
       type: "invocation_started",
@@ -551,6 +576,7 @@ async function runOneNode(
           processPid = handle.pid;
         }
       });
+      await permit.release();
       await appendCoordinatorEvent(root, assertCoordinatorOwned, {
         type: "invocation_finished",
         run_id: runId,
@@ -580,6 +606,7 @@ async function runOneNode(
       lastRetryDecision = { reason: decision.reason, backoff_ms: decision.backoff_ms };
       const errorDetails =
         error instanceof ResearchStewardError ? error.details : {};
+      await permit.release();
       await appendCoordinatorEvent(root, assertCoordinatorOwned, {
         type: "invocation_finished",
         run_id: runId,
