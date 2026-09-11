@@ -222,9 +222,10 @@ export function matchArgPattern(
         const resolved = path.resolve(projectRoot, value);
         const relative = path.relative(projectRoot, resolved);
         if (relative.startsWith("..") || path.isAbsolute(relative)) return false;
+        const realRoot = realpathSync(projectRoot);
         const realParent = realpathSync(path.dirname(resolved));
         const real = path.join(realParent, path.basename(resolved));
-        const realRel = path.relative(realpathSync(projectRoot), real);
+        const realRel = path.relative(realRoot, real);
         if (realRel.startsWith("..") || path.isAbsolute(realRel)) return false;
       } catch {
         return false;
