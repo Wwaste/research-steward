@@ -1,7 +1,10 @@
-import { rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  __test_getReadsInsideNodeScope,
+  __test_resetReadsInsideNodeScope,
   __test_setBeforeHeadUpdate,
   appendEvent,
   freezePacket,
@@ -17,6 +20,102 @@ afterEach(async () => {
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+function twoNodePlan(adapter: "fake" | "kimi", extraLimits: Record<string, unknown> = {}) {
+  return {
+    version: 1,
+    name: "inv",
+    packet_id: "pkt-inv",
+    mode: "open",
+    limits: {
+      max_parallel: 2,
+      max_wall_time_ms: 1_800_000,
+      max_prompt_chars: 20_000,
+      max_output_chars: 10_000,
+      retry_limit: 0,
+      max_failures: 3,
+      ...extraLimits
+    },
+    nodes: [
+      {
+        id: "a",
+        actor_id: "aa",
+        role: "analyst",
+        adapter,
+        brief: "a",
+        depends_on: [],
+        visibility: "shared",
+        can_adjudicate: false,
+        timeout_ms: 8_000
+      },
+      {
+        id: "b",
+        actor_id: "ab",
+        role: "analyst",
+        adapter,
+        brief: "b",
+        depends_on: [],
+        visibility: "shared",
+        can_adjudicate: false,
+        timeout_ms: 8_000
+      }
+    ]
+  } as never;
+}
+
+/**
+ * CR-M-078-v3 main defense: readEvents must never run inside runOneNode.
+ * Any restore of the CR-M-075 defect (any adapter, any position) is
+ * deterministic red via the node-scope counter.
+ */
+describe("CR-M-078-v3 readEvents node-scope invariant", () => {
+  it(
+    "zero readEvents calls inside runOneNode for parallel fake nodes",
+    async () => {
+      process.env.RESEARCH_STEWARD_ENABLE_FAKE_ADAPTER = "1";
+      const root = await initializedProject("inv-fake");
+      await writeFile(path.join(root, "n.md"), "x\n", "utf8");
+      await freezePacket(root, "pkt-inv", ["n.md"]);
+      __test_resetReadsInsideNodeScope();
+      try {
+        const result = await runRoundtable(root, twoNodePlan("fake"), "inv-fake");
+        expect(result.outcome).toBe("complete");
+        expect(__test_getReadsInsideNodeScope()).toBe(0);
+      } finally {
+        delete process.env.RESEARCH_STEWARD_ENABLE_FAKE_ADAPTER;
+      }
+    },
+    20_000
+  );
+
+  it(
+    "zero readEvents calls inside runOneNode for parallel paid nodes (budget path)",
+    async () => {
+      const shimDir = await mkdtemp(path.join(os.tmpdir(), "rs-inv-"));
+      const shimPath = path.join(shimDir, "ok.sh");
+      await writeFile(shimPath, "#!/bin/sh\nsleep 0.15\necho ok\n", "utf8");
+      await chmod(shimPath, 0o755);
+      const root = await initializedProject("inv-paid");
+      await writeFile(path.join(root, "n.md"), "x\n", "utf8");
+      await freezePacket(root, "pkt-inv", ["n.md"]);
+      const prev = process.env.RESEARCH_STEWARD_KIMI_PATH;
+      process.env.RESEARCH_STEWARD_KIMI_PATH = shimPath;
+      __test_resetReadsInsideNodeScope();
+      try {
+        // Outcome may be failed if the shim is not a real kimi CLI; the
+        // invariant only requires that the budget/permit path ran without
+        // a mid-batch public readEvents.
+        await runRoundtable(root, twoNodePlan("kimi"), "inv-paid");
+        expect(__test_getReadsInsideNodeScope()).toBe(0);
+      } finally {
+        if (prev === undefined) delete process.env.RESEARCH_STEWARD_KIMI_PATH;
+        else process.env.RESEARCH_STEWARD_KIMI_PATH = prev;
+        await rm(shimDir, { recursive: true, force: true });
+      }
+    },
+    25_000
+  );
+});
 
 /**
  * CR-M-075: parallel nodes must not readEvents mid-batch (LEDGER_HEAD_MISMATCH).

@@ -15,7 +15,9 @@ import {
   appendEvent,
   buildPacketTextBundle,
   loadPacket,
-  readEvents
+  readEvents,
+  __test_enterNodeScope,
+  __test_exitNodeScope
 } from "./store.js";
 import { modelOutputContract, runProvider } from "./providers.js";
 import { decideRetry, policyFromPlanLimits } from "./retry-policy.js";
@@ -449,6 +451,39 @@ async function blockRemainingNodes(
 }
 
 async function runOneNode(
+  root: string,
+  plan: RoundtablePlan,
+  runId: string,
+  node: RoundtableNode,
+  packetBundle: string,
+  packetHash: string,
+  completed: ReadonlyMap<string, CommittedEvent>,
+  deadlineAt: number,
+  assertCoordinatorOwned: AssertCoordinatorOwned,
+  coordinatorEvents: readonly CommittedEvent[]
+): Promise<CommittedEvent> {
+  // CR-M-078-v3: any readEvents inside this scope is a mid-batch snapshot
+  // violation (the CR-M-075 fix requires the coordinator snapshot only).
+  __test_enterNodeScope();
+  try {
+    return await runOneNodeInner(
+      root,
+      plan,
+      runId,
+      node,
+      packetBundle,
+      packetHash,
+      completed,
+      deadlineAt,
+      assertCoordinatorOwned,
+      coordinatorEvents
+    );
+  } finally {
+    __test_exitNodeScope();
+  }
+}
+
+async function runOneNodeInner(
   root: string,
   plan: RoundtablePlan,
   runId: string,

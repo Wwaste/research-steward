@@ -58271,7 +58271,7 @@ async function withProtocolLock(root, resourceId, operation) {
 function eventHash(eventWithoutHash) {
   return sha256Text(stableJson(eventWithoutHash));
 }
-async function readEvents(root) {
+async function readEventsUntracked(root) {
   const manifest = await readManifest(root);
   const head = await readLedgerHead(root, manifest.project_id);
   const directory = await resolvePrivateExistingInside(root, ".research/events");
@@ -58342,7 +58342,24 @@ async function readEvents(root) {
   }
   return events;
 }
+async function readEvents(root) {
+  noteReadEventsCall();
+  return readEventsUntracked(root);
+}
 var __test_beforeHeadUpdate = null;
+var nodeScopeDepth = 0;
+var readsInsideNodeScope = 0;
+function __test_enterNodeScope() {
+  nodeScopeDepth += 1;
+}
+function __test_exitNodeScope() {
+  nodeScopeDepth -= 1;
+}
+function noteReadEventsCall() {
+  if (nodeScopeDepth > 0) {
+    readsInsideNodeScope += 1;
+  }
+}
 async function appendEvent(root, rawDraft) {
   const manifest = await readManifest(root);
   const draft = EventDraftSchema.parse(rawDraft);
@@ -58397,7 +58414,7 @@ async function appendEvent(root, rawDraft) {
     );
   }
   const committed = await withEventLock(root, async (lease) => {
-    const existing = await readEvents(root);
+    const existing = await readEventsUntracked(root);
     const existingIds = new Set(existing.map((event2) => event2.event_id));
     const existingFindingIds = new Set(
       existing.flatMap((event2) => event2.findings.map((finding) => finding.id))
@@ -58783,7 +58800,10 @@ function invalidatingEventsAfterVerification(events, verification) {
   );
 }
 async function renderViewsUnlocked(root) {
-  const [manifest, events] = await Promise.all([readManifest(root), readEvents(root)]);
+  const [manifest, events] = await Promise.all([
+    readManifest(root),
+    readEventsUntracked(root)
+  ]);
   const sharedEvents = eventsVisibleInSharedViews(events);
   const state = deriveState(events);
   const latest = events.at(-1);
@@ -61258,6 +61278,25 @@ async function blockRemainingNodes(root, plan, runId, packetHash, reason, assert
   return events;
 }
 async function runOneNode(root, plan, runId, node2, packetBundle, packetHash, completed, deadlineAt, assertCoordinatorOwned, coordinatorEvents) {
+  __test_enterNodeScope();
+  try {
+    return await runOneNodeInner(
+      root,
+      plan,
+      runId,
+      node2,
+      packetBundle,
+      packetHash,
+      completed,
+      deadlineAt,
+      assertCoordinatorOwned,
+      coordinatorEvents
+    );
+  } finally {
+    __test_exitNodeScope();
+  }
+}
+async function runOneNodeInner(root, plan, runId, node2, packetBundle, packetHash, completed, deadlineAt, assertCoordinatorOwned, coordinatorEvents) {
   const dependencyEvents = node2.depends_on.map((id) => completed.get(id)).filter((event) => event !== void 0);
   const failedDependency = dependencyEvents.find((event) => event.status !== "complete");
   if (failedDependency) {

@@ -261,7 +261,11 @@ function eventHash(eventWithoutHash: Omit<CommittedEvent, "event_hash">): string
   return sha256Text(stableJson(eventWithoutHash));
 }
 
-export async function readEvents(root: string): Promise<CommittedEvent[]> {
+/**
+ * Internal ledger read used by appendEvent under the event lock.
+ * Not counted by the CR-M-078-v3 node-scope invariant.
+ */
+async function readEventsUntracked(root: string): Promise<CommittedEvent[]> {
   const manifest = await readManifest(root);
   const head = await readLedgerHead(root, manifest.project_id);
   const directory = await resolvePrivateExistingInside(root, ".research/events");
@@ -339,6 +343,12 @@ export async function readEvents(root: string): Promise<CommittedEvent[]> {
   return events;
 }
 
+/** Public ledger read. Counted for the CR-M-078-v3 node-scope invariant. */
+export async function readEvents(root: string): Promise<CommittedEvent[]> {
+  noteReadEventsCall();
+  return readEventsUntracked(root);
+}
+
 /**
  * test-only injection (CR-M-078): invoked after an event file is written and
  * before the ledger head is updated. Production must leave this null.
@@ -350,6 +360,36 @@ export function __test_setBeforeHeadUpdate(
   fn: (() => Promise<void>) | null
 ): void {
   __test_beforeHeadUpdate = fn;
+}
+
+/**
+ * test-only readEvents observability (CR-M-078-v3 invariant).
+ * runOneNode enters/exits a scope; any readEvents inside that scope is a
+ * mid-batch violation of the CR-M-075 snapshot rule.
+ */
+let nodeScopeDepth = 0;
+let readsInsideNodeScope = 0;
+
+export function __test_enterNodeScope(): void {
+  nodeScopeDepth += 1;
+}
+
+export function __test_exitNodeScope(): void {
+  nodeScopeDepth -= 1;
+}
+
+export function __test_getReadsInsideNodeScope(): number {
+  return readsInsideNodeScope;
+}
+
+export function __test_resetReadsInsideNodeScope(): void {
+  readsInsideNodeScope = 0;
+}
+
+function noteReadEventsCall(): void {
+  if (nodeScopeDepth > 0) {
+    readsInsideNodeScope += 1;
+  }
 }
 
 export async function appendEvent(root: string, rawDraft: EventDraft): Promise<CommittedEvent> {
@@ -424,7 +464,7 @@ export async function appendEvent(root: string, rawDraft: EventDraft): Promise<C
   }
 
   const committed = await withEventLock(root, async (lease) => {
-    const existing = await readEvents(root);
+    const existing = await readEventsUntracked(root);
     const existingIds = new Set(existing.map((event) => event.event_id));
     const existingFindingIds = new Set(
       existing.flatMap((event) => event.findings.map((finding) => finding.id))
@@ -869,7 +909,10 @@ function invalidatingEventsAfterVerification(
 }
 
 async function renderViewsUnlocked(root: string): Promise<void> {
-  const [manifest, events] = await Promise.all([readManifest(root), readEvents(root)]);
+  const [manifest, events] = await Promise.all([
+    readManifest(root),
+    readEventsUntracked(root)
+  ]);
   const sharedEvents = eventsVisibleInSharedViews(events);
   const state = deriveState(events);
   const latest = events.at(-1);
