@@ -60,7 +60,7 @@ const declareId = "00000000-0000-4000-8000-000000000001";
 describe("finding fold (DESIGN-EVIDENCE §3)", () => {
   it("reports → open via adjudication-style transition", () => {
     const map = foldFindings([
-      contribution(1, [{ id: "F1", severity: "important", claim: "c" }]),
+      contribution(1, [{ id: "F1", severity: "high", claim: "c" }]),
       {
         ...transition(2, declareId, "F1", "open"),
         metadata: { finding_event_id: declareId, finding_id: "F1", from: "reported", to: "open", reason: "accept" }
