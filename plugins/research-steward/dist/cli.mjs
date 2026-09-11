@@ -38627,7 +38627,7 @@ var require_dist6 = __commonJS({
 
 // src/cli.ts
 import path12 from "node:path";
-import { readFile as readFile6 } from "node:fs/promises";
+import { readFile as readFile7 } from "node:fs/promises";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // src/paths.ts
@@ -59753,7 +59753,7 @@ async function projectSummary(root) {
 // src/workflow.ts
 import { randomUUID as randomUUID5 } from "node:crypto";
 import path7 from "node:path";
-import { readFile as readFile3 } from "node:fs/promises";
+import { readFile as readFile4 } from "node:fs/promises";
 
 // src/providers.ts
 import { spawn } from "node:child_process";
@@ -60714,7 +60714,7 @@ var InvocationReplayAuthorizedPayloadSchema = external_exports.object({
 
 // src/budget-permits.ts
 import { randomUUID as randomUUID4 } from "node:crypto";
-import { mkdir as mkdir5, rename as rename4, rm as rm5, stat as stat4, writeFile } from "node:fs/promises";
+import { mkdir as mkdir5, readFile as readFile3, readdir as readdir2, rename as rename4, rm as rm5, stat as stat4, writeFile } from "node:fs/promises";
 import path6 from "node:path";
 var DEFAULT_STALE_MS = 6e4;
 function sleep2(ms) {
@@ -60809,11 +60809,40 @@ function countPaidInvocationsInWindow(events, windowStartIso, paidAdapters = ["k
   }
   return n;
 }
-function assertBudgetAllowsFromLedger(input2) {
+async function liveLeaseHoldsToken(runtimeRoot, provider, token) {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(provider)) {
+    return false;
+  }
+  const dir = path6.join(runtimeRoot, "permits", provider);
+  let entries;
+  try {
+    entries = await readdir2(dir);
+  } catch {
+    return false;
+  }
+  for (const entry of entries) {
+    if (!entry.startsWith("slot-")) continue;
+    try {
+      const raw = await readFile3(path6.join(dir, entry, "owner.json"), "utf8");
+      const owner = JSON.parse(raw);
+      if (owner.token === token) return true;
+    } catch {
+    }
+  }
+  return false;
+}
+async function assertBudgetAllowsFromLedger(input2) {
   if (input2.permit_token === void 0 || input2.permit_token === "") {
     throw new ResearchStewardError(
       "PERMIT_REQUIRED",
       "Budget checks require a held permit token."
+    );
+  }
+  if (input2.runtimeRoot === void 0 || input2.runtimeRoot === "" || !await liveLeaseHoldsToken(input2.runtimeRoot, input2.provider, input2.permit_token)) {
+    throw new ResearchStewardError(
+      "PERMIT_TOKEN_MISMATCH",
+      "Permit token does not match a live lease for this provider.",
+      { provider: input2.provider }
     );
   }
   const used = countPaidInvocationsInWindow(
@@ -61234,42 +61263,43 @@ async function runOneNode(root, plan, runId, node2, packetBundle, packetHash, co
     const budgetMax = plan.limits.budget_max_invocations ?? plan.nodes.length * (plan.limits.retry_limit + 1);
     try {
       if (node2.adapter !== "fake") {
-        assertBudgetAllowsFromLedger({
+        await assertBudgetAllowsFromLedger({
           events: coordinatorEvents,
           window_start: new Date(Date.now() - budgetWindowMs).toISOString(),
           max_invocations: budgetMax,
           provider: node2.adapter,
-          permit_token: permit.token
+          permit_token: permit.token,
+          runtimeRoot
         });
       }
+      await appendCoordinatorEvent(root, assertCoordinatorOwned, {
+        type: "invocation_started",
+        run_id: runId,
+        actor: {
+          id: node2.actor_id,
+          role: node2.role,
+          adapter: node2.adapter,
+          ...node2.model ? { model: node2.model } : {}
+        },
+        input_hash: packetHash,
+        depends_on: dependencyEvents.map((event) => event.event_id),
+        // Process metadata is never blind scientific content.
+        visibility: "shared",
+        summary: `Invocation started for ${node2.id} attempt ${attempts}.`,
+        metadata: {
+          invocation_id: invocationId,
+          run_id: runId,
+          node_id: node2.id,
+          attempt: attempts,
+          adapter: node2.adapter,
+          ...node2.model ? { model: node2.model } : {},
+          retry_reason: lastRetryDecision?.reason ?? null
+        }
+      });
     } catch (error61) {
       await permit.release();
       throw error61;
     }
-    await appendCoordinatorEvent(root, assertCoordinatorOwned, {
-      type: "invocation_started",
-      run_id: runId,
-      actor: {
-        id: node2.actor_id,
-        role: node2.role,
-        adapter: node2.adapter,
-        ...node2.model ? { model: node2.model } : {}
-      },
-      input_hash: packetHash,
-      depends_on: dependencyEvents.map((event) => event.event_id),
-      // Process metadata is never blind scientific content.
-      visibility: "shared",
-      summary: `Invocation started for ${node2.id} attempt ${attempts}.`,
-      metadata: {
-        invocation_id: invocationId,
-        run_id: runId,
-        node_id: node2.id,
-        attempt: attempts,
-        adapter: node2.adapter,
-        ...node2.model ? { model: node2.model } : {},
-        retry_reason: lastRetryDecision?.reason ?? null
-      }
-    });
     let result;
     let processPid;
     try {
@@ -61470,7 +61500,7 @@ async function runRoundtable(root, rawPlan, requestedRunId) {
     await assertCoordinatorOwned();
     const planPath = await resolvePrivateDestinationInside(root, `${runRelative}/plan.json`);
     try {
-      const existing = JSON.parse(await readFile3(planPath, "utf8"));
+      const existing = JSON.parse(await readFile4(planPath, "utf8"));
       if (existing.plan_hash !== planHash) {
         throw new ResearchStewardError("RUN_PLAN_MISMATCH", "Cannot resume a run with a different plan.");
       }
@@ -73242,7 +73272,7 @@ var StreamableHTTPServerTransport = class {
 // src/doctor.ts
 import { randomUUID as randomUUID6 } from "node:crypto";
 import { constants as constants3, statSync } from "node:fs";
-import { access as access3, readFile as readFile4, readdir as readdir3, realpath as realpath3, rm as rm6, stat as stat5, writeFile as writeFile2 } from "node:fs/promises";
+import { access as access3, readFile as readFile5, readdir as readdir3, realpath as realpath3, rm as rm6, stat as stat5, writeFile as writeFile2 } from "node:fs/promises";
 import path8 from "node:path";
 import { fileURLToPath } from "node:url";
 var DoctorCheckSchema = external_exports.object({
@@ -73377,7 +73407,7 @@ async function checkSchemas(pluginRoot) {
   const broken = [];
   for (const name of PUBLIC_SCHEMA_FILES) {
     try {
-      JSON.parse(await readFile4(path8.join(pluginRoot, "schemas", name), "utf8"));
+      JSON.parse(await readFile5(path8.join(pluginRoot, "schemas", name), "utf8"));
     } catch {
       broken.push(name);
     }
@@ -73428,7 +73458,7 @@ async function checkSkills(pluginRoot) {
 }
 async function checkMcpManifest(pluginRoot) {
   try {
-    const parsed = JSON.parse(await readFile4(path8.join(pluginRoot, ".mcp.json"), "utf8"));
+    const parsed = JSON.parse(await readFile5(path8.join(pluginRoot, ".mcp.json"), "utf8"));
     const servers = parsed !== null && typeof parsed === "object" ? parsed["mcpServers"] : void 0;
     const entry = servers !== null && typeof servers === "object" ? servers["research-steward"] : void 0;
     if (entry !== null && typeof entry === "object") {
@@ -73503,7 +73533,7 @@ async function checkProjectRoot(projectRoot) {
   }
   let manifestNote = "no protocol manifest yet";
   try {
-    const raw = await readFile4(path8.join(projectRoot, ".research", "manifest.json"), "utf8");
+    const raw = await readFile5(path8.join(projectRoot, ".research", "manifest.json"), "utf8");
     JSON.parse(raw);
     manifestNote = "the existing .research/manifest.json parses";
   } catch (error61) {
@@ -73606,10 +73636,10 @@ function checkRouteBilling(env) {
 async function checkMcpToolInventory(pluginRoot) {
   let source;
   try {
-    source = await readFile4(path8.join(pluginRoot, "src", "server.ts"), "utf8");
+    source = await readFile5(path8.join(pluginRoot, "src", "server.ts"), "utf8");
   } catch {
     try {
-      source = await readFile4(path8.join(pluginRoot, "dist", "server.mjs"), "utf8");
+      source = await readFile5(path8.join(pluginRoot, "dist", "server.mjs"), "utf8");
     } catch {
       return {
         id: "mcp.tools",
@@ -74640,7 +74670,7 @@ import {
   lstat as lstat2,
   mkdir as mkdir6,
   mkdtemp as mkdtemp2,
-  readFile as readFile5,
+  readFile as readFile6,
   readdir as readdir4,
   rm as rm8,
   stat as stat6,
@@ -74870,7 +74900,7 @@ async function cleanRoomVerify(archivePath, expected) {
       );
     }
     const parsed = InternalManifestSchema.parse(
-      (0, import_yaml2.parse)(await readFile5(path10.join(cleanRoot, "HANDOFF_MANIFEST.yaml"), "utf8"))
+      (0, import_yaml2.parse)(await readFile6(path10.join(cleanRoot, "HANDOFF_MANIFEST.yaml"), "utf8"))
     );
     if (stableJson(parsed) !== stableJson(expected)) {
       throw new ResearchStewardError(
@@ -75028,7 +75058,7 @@ async function finalizePublishedPackage(root, archivePath, journal) {
 }
 async function recoverPublishedPackage(root, archivePath, journalPath, packageId, requestedPaths) {
   const journal = PackageJournalSchema.parse(
-    JSON.parse(await readFile5(journalPath, "utf8"))
+    JSON.parse(await readFile6(journalPath, "utf8"))
   );
   if (journal.internal.package_id !== packageId || stableJson(journal.internal.files.map((file2) => file2.path).sort()) !== stableJson([...requestedPaths].sort())) {
     throw new ResearchStewardError(
@@ -75066,7 +75096,7 @@ async function packageHandoffLocked(root, packageId, requestedPaths) {
     ".research/manifest.json"
   );
   const manifestRaw = JSON.parse(
-    await readFile5(projectManifestPath, "utf8")
+    await readFile6(projectManifestPath, "utf8")
   );
   if (typeof manifestRaw.project_id !== "string" || !/^[0-9a-f-]{36}$/i.test(manifestRaw.project_id)) {
     throw new ResearchStewardError("INVALID_MANIFEST", "Project manifest has no project ID.");
@@ -76027,7 +76057,7 @@ async function main() {
   }
   if (parsed.command === "dry-run") {
     const rawPlan = JSON.parse(
-      await readFile6(path12.resolve(one(parsed.flags, "plan")), "utf8")
+      await readFile7(path12.resolve(one(parsed.flags, "plan")), "utf8")
     );
     const forecast = buildForecast(rawPlan);
     if (parsed.flags.has("out")) {
@@ -76079,7 +76109,7 @@ async function main() {
       result = { rendered: true };
       break;
     case "roundtable": {
-      const plan = JSON.parse(await readFile6(path12.resolve(one(parsed.flags, "plan")), "utf8"));
+      const plan = JSON.parse(await readFile7(path12.resolve(one(parsed.flags, "plan")), "utf8"));
       const workflowResult = await runRoundtable(
         root,
         plan,
