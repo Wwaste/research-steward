@@ -1,0 +1,49 @@
+{
+  "report_version": 1,
+  "generated_at": "2026-09-11T01:10:02.812Z",
+  "status": "reported_pass",
+  "scenarios": [
+    {
+      "scenario_id": "g3-timeout",
+      "samples": [
+        {
+          "scenario_id": "g3-timeout",
+          "counter_value": 0,
+          "ledger_head_hash": null,
+          "event_count": 0,
+          "captured_at": "2026-09-11T01:10:02.750Z",
+          "notes": "skeleton: process-level timeout assertions live in vitest provider-isolation/scenarios"
+        }
+      ],
+      "verdict": "reported_pass"
+    },
+    {
+      "scenario_id": "g4-quota",
+      "samples": [
+        {
+          "scenario_id": "g4-quota",
+          "counter_value": 0,
+          "ledger_head_hash": null,
+          "event_count": 0,
+          "captured_at": "2026-09-11T01:10:02.750Z",
+          "notes": "skeleton: quota no-retry asserted in tests/retry-shim.test.ts"
+        }
+      ],
+      "verdict": "reported_pass"
+    },
+    {
+      "scenario_id": "g8-v01-readonly",
+      "samples": [
+        {
+          "scenario_id": "g8-v01-readonly",
+          "counter_value": 1,
+          "ledger_head_hash": null,
+          "event_count": 0,
+          "captured_at": "2026-09-11T01:10:02.812Z",
+          "notes": "tag e2227895f40a"
+        }
+      ],
+      "verdict": "reported_pass"
+    }
+  ]
+}
