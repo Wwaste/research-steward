@@ -16,7 +16,7 @@ const policy = CheckPolicyV2Schema.parse({
       allow_trailing: { kind: "regex", pattern: "^[a-z]+$" }
     }
   ],
-  allowed_env: ["PATH", "LD_PRELOAD"]
+  allowed_env: ["MY_CUSTOM_VAR"]
 });
 
 describe("command policy v2 (DESIGN-COMMAND-DOMAIN)", () => {
@@ -42,7 +42,9 @@ describe("command policy v2 (DESIGN-COMMAND-DOMAIN)", () => {
     expect(() => assertEnvAllowed(policy, "LD_PRELOAD")).toThrowError(
       expect.objectContaining({ code: "CHECK_ENV_DENYLISTED" })
     );
-    expect(() => assertEnvAllowed(policy, "PATH")).not.toThrow();
+    expect(() => assertEnvAllowed(policy, "PATH")).toThrowError(
+      expect.objectContaining({ code: "CHECK_ENV_DENYLISTED" })
+    );
     expect(() => assertEnvAllowed(policy, "AWS_SECRET")).toThrowError(
       expect.objectContaining({ code: "CHECK_ENV_NOT_ALLOWED" })
     );

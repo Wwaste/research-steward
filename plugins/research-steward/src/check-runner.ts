@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import {
   authorizeCheckRequest,
+  isDenylistedEnvKey,
   type CheckPolicy,
   type CheckRequest,
   type CheckResult
@@ -66,6 +67,9 @@ export async function prepareAndRunCheck(options: RunCheckOptions): Promise<Chec
     TMPDIR: projectRoot
   };
   for (const key of options.policy.allowed_env) {
+    // CR-M-085: never inherit denylisted keys (e.g. PATH) from the caller,
+    // even if a stale policy listed them in allowed_env.
+    if (isDenylistedEnvKey(key)) continue;
     if (process.env[key] !== undefined) env[key] = process.env[key]!;
   }
   for (const [key, value] of Object.entries(prepared.env ?? {})) {

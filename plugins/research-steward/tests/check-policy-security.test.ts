@@ -61,7 +61,7 @@ describe("check-policy security (CR-M-079/080/081/082)", () => {
       CheckPolicyV2Schema.parse({
         policy_version: 2,
         templates: [
-          { template_id: "t", executable: "/bin/true", argv_pattern: [{ kind: "regex", pattern: "(" }] }
+          { template_id: "t", executable: "/usr/bin/true", argv_pattern: [{ kind: "regex", pattern: "(" }] }
         ]
       })
     ).toThrow();
@@ -69,20 +69,20 @@ describe("check-policy security (CR-M-079/080/081/082)", () => {
       CheckPolicyV2Schema.parse({
         policy_version: 2,
         templates: [
-          { template_id: "t", executable: "/bin/true", argv_pattern: [{ kind: "regex", pattern: "(a+)+$" }] }
+          { template_id: "t", executable: "/usr/bin/true", argv_pattern: [{ kind: "regex", pattern: "(a+)+$" }] }
         ]
       })
     ).toThrow();
   });
 
   it("loadCheckPolicy parses v1 and v2 (CR-M-082)", () => {
-    expect(loadCheckPolicy({ policy_version: 1, allowlist: ["/bin/true"] })).toMatchObject({
+    expect(loadCheckPolicy({ policy_version: 1, allowlist: ["/usr/bin/true"] })).toMatchObject({
       policy_version: 1
     });
     expect(
       loadCheckPolicy({
         policy_version: 2,
-        templates: [{ template_id: "t", executable: "/bin/true", argv_pattern: [] }]
+        templates: [{ template_id: "t", executable: "/usr/bin/true", argv_pattern: [] }]
       })
     ).toMatchObject({ policy_version: 2 });
   });
@@ -128,17 +128,42 @@ describe("CR-M-084 path_dirs realpath fence", () => {
 
 
 describe("CR-M-085 PATH denylist", () => {
-  it("rejects PATH in allowed_env even if configured", async () => {
+  it("V2 schema rejects PATH in allowed_env", () => {
+    expect(() =>
+      CheckPolicyV2Schema.parse({
+        policy_version: 2,
+        templates: [{ template_id: "t", executable: "/usr/bin/true", argv_pattern: [] }],
+        allowed_env: ["PATH"]
+      })
+    ).toThrow();
+  });
+
+  it("runner never inherits denylisted allowed_env keys", async () => {
     const root = await temporaryDirectory();
-    const policy = CheckPolicyV2Schema.parse({
-      policy_version: 2,
-      templates: [{ template_id: "t", executable: "/bin/true", argv_pattern: [] }],
-      allowed_env: ["PATH"]
-    });
-    const { assertEnvAllowed } = await import("../src/check-policy.js");
-    expect(() => assertEnvAllowed(policy, "PATH")).toThrowError(
-      expect.objectContaining({ code: "CHECK_ENV_DENYLISTED" })
-    );
+    // Craft a v1 policy (no refine) that lists PATH — runner must skip it.
+    const { prepareAndRunCheck } = await import("../src/check-runner.js");
+    const prevPath = process.env.PATH;
+    process.env.PATH = "/evil/bin:/usr/bin";
+    try {
+      const result = await prepareAndRunCheck({
+        projectRoot: root,
+        policy: {
+          policy_version: 1,
+          allowlist: ["/usr/bin/true"],
+          allow_network: false,
+          max_wall_time_ms: 5000,
+          max_output_bytes: 10240,
+          max_concurrency: 1,
+          allowed_env: ["PATH"],
+          extra_cwd_roots: []
+        },
+        request: { executable: "/usr/bin/true", argv: [] }
+      });
+      expect(result.exit_code).toBe(0);
+    } finally {
+      if (prevPath === undefined) delete process.env.PATH;
+      else process.env.PATH = prevPath;
+    }
   });
 });
 
@@ -148,11 +173,11 @@ describe("CR-M-082 wiring", () => {
     const { createCheckDomainFromPolicy } = await import("../src/check-domain.js");
     const v2 = createCheckDomainFromPolicy(await temporaryDirectory(), {
       policy_version: 2,
-      templates: [{ template_id: "t", executable: "/bin/true", argv_pattern: [] }]
+      templates: [{ template_id: "t", executable: "/usr/bin/true", argv_pattern: [] }]
     });
     expect(v2.policy_version).toBe(2);
     expect(() =>
-      createCheckDomainFromPolicy("/tmp", { policy_version: 1, allowlist: ["/bin/true"] })
+      createCheckDomainFromPolicy("/tmp", { policy_version: 1, allowlist: ["/usr/bin/true"] })
     ).toThrowError(expect.objectContaining({ code: "CHECK_POLICY_VERSION_UNSUPPORTED" }));
   });
 });

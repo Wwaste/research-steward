@@ -181,7 +181,14 @@ export const CheckPolicyV2Schema = z
     max_wall_time_ms: z.number().int().min(100).max(600_000).default(30_000),
     max_output_bytes: z.number().int().min(1_024).max(10_000_000).default(1_000_000),
     max_concurrency: z.number().int().min(1).max(16).default(2),
-    allowed_env: z.array(z.string().min(1).max(100)).max(32).default([]),
+    allowed_env: z
+      .array(z.string().min(1).max(100))
+      .max(32)
+      .default([])
+      .refine(
+        (keys) => keys.every((k) => !isDenylistedEnvKey(k)),
+        { message: "allowed_env must not contain denylisted keys (e.g. PATH)" }
+      ),
     extra_cwd_roots: z.array(z.string().min(1).max(4_096)).max(16).default([])
   })
   .strict();
