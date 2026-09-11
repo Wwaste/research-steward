@@ -78,3 +78,36 @@ describe("budget fold from ledger (DESIGN-BUDGET-PERMITS)", () => {
     ).toThrowError(expect.objectContaining({ code: "PERMIT_REQUIRED" }));
   });
 });
+
+
+describe("CR-M-072 remainder", () => {
+  it("PERMIT_REQUIRED when token missing; accepts real permit token", async () => {
+    const runtimeRoot = await temporaryDirectory();
+    const permit = await acquirePermitSlot({
+      runtimeRoot,
+      provider: "kimi",
+      maxConcurrent: 2
+    });
+    try {
+      expect(() =>
+        assertBudgetAllowsFromLedger({
+          events: [],
+          window_start: "2000-01-01T00:00:00.000Z",
+          max_invocations: 5,
+          provider: "kimi"
+        })
+      ).toThrowError(expect.objectContaining({ code: "PERMIT_REQUIRED" }));
+      expect(() =>
+        assertBudgetAllowsFromLedger({
+          events: [],
+          window_start: "2000-01-01T00:00:00.000Z",
+          max_invocations: 5,
+          provider: "kimi",
+          permit_token: permit.token
+        })
+      ).not.toThrow();
+    } finally {
+      await permit.release();
+    }
+  });
+});
