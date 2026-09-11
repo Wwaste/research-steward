@@ -32,7 +32,9 @@ export const FindingSnapshotSchema = z
     fixed_in_packet_id: z.string().nullable().default(null),
     expires_at: z.string().datetime({ offset: true }).nullable().default(null),
     last_transition_event_id: z.string().uuid().nullable().default(null),
-    open_diff_review_id: z.string().nullable().default(null)
+    open_diff_review_id: z.string().nullable().default(null),
+    /** CR-M-066: first structured locator for carry-forward decisions. */
+    locator_path: z.string().max(4_096).nullable().default(null)
   })
   .strict();
 
@@ -71,6 +73,31 @@ export function foldFindings(events: readonly CommittedEvent[]): Map<string, Fin
         if (typeof f.id !== "string") continue;
         const k = key(event.event_id, f.id);
         if (map.has(k)) continue;
+        const evidenceList = Array.isArray((finding as { evidence?: unknown }).evidence)
+          ? ((finding as { evidence: unknown[] }).evidence)
+          : [];
+        const structured = evidenceList.find(
+          (e) =>
+            e !== null &&
+            typeof e === "object" &&
+            (e as { kind?: unknown }).kind === "structured"
+        ) as unknown as { locator?: { path?: string } } | undefined;
+        // CR-M-066: if this event is an adjudication, fold accept/partial → open
+        const decisions = Array.isArray(event.decisions) ? event.decisions : [];
+        const matching = decisions.find(
+          (d) =>
+            d !== null &&
+            typeof d === "object" &&
+            (d as { finding_id?: unknown }).finding_id === f.id
+        ) as { disposition?: string } | undefined;
+        const initState =
+          event.type === "adjudication" && matching?.disposition === "accept"
+            ? "open"
+            : event.type === "adjudication" && matching?.disposition === "reject"
+              ? "rejected"
+              : event.type === "adjudication" && matching?.disposition === "defer"
+                ? "deferred"
+                : "reported";
         map.set(
           k,
           FindingSnapshotSchema.parse({
@@ -79,7 +106,12 @@ export function foldFindings(events: readonly CommittedEvent[]): Map<string, Fin
             reporter_actor_id: event.actor.id,
             severity: f.severity ?? "info",
             claim: typeof f.claim === "string" ? f.claim : "",
-            state: "reported"
+            state: initState,
+            locator_path:
+              structured?.locator?.path ??
+              typeof (finding as { locator?: unknown }).locator === "string"
+                ? (finding as unknown as { locator: string }).locator
+                : null
           })
         );
       }
@@ -101,12 +133,16 @@ export function foldFindings(events: readonly CommittedEvent[]): Map<string, Fin
       if (!existing) continue;
       if (!isLegalFindingTransition(existing.state, to as FindingFoldState)) continue;
       const reopen = to === "open" && existing.state !== "reported";
+      const reconfirm = to === "open" && existing.state === "open";
       map.set(k, {
         ...existing,
         state: to as FindingFoldState,
-        adjudicator_actor_id: reopen
-          ? null
-          : event.actor.id,
+        // CR-M-066: reopen from terminal clears authority; open→open reconfirm keeps it.
+        adjudicator_actor_id: reconfirm
+          ? existing.adjudicator_actor_id
+          : reopen
+            ? null
+            : event.actor.id,
         remediation_evidence_fingerprints: reopen
           ? []
           : Array.isArray(meta["remediation_evidence_fingerprints"])
@@ -122,7 +158,13 @@ export function foldFindings(events: readonly CommittedEvent[]): Map<string, Fin
           : typeof meta["expires_at"] === "string"
             ? (meta["expires_at"] as string)
             : existing.expires_at,
-        last_transition_event_id: event.event_id
+        last_transition_event_id: event.event_id,
+        open_diff_review_id:
+          typeof meta["diff_review_id"] === "string"
+            ? (meta["diff_review_id"] as string)
+            : to === "open"
+              ? existing.open_diff_review_id
+              : null
       });
     }
   }

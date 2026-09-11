@@ -100,7 +100,8 @@ describe("finding fold (DESIGN-EVIDENCE §3)", () => {
         fixed_in_packet_id: null,
         expires_at: null,
         last_transition_event_id: null,
-        open_diff_review_id: null
+        open_diff_review_id: null,
+        locator_path: null
       })
     ).toThrowError(expect.objectContaining({ code: "FINDING_FIXED_REQUIRES_EVIDENCE" }));
     expect(() =>
@@ -116,7 +117,8 @@ describe("finding fold (DESIGN-EVIDENCE §3)", () => {
         fixed_in_packet_id: null,
         expires_at: null,
         last_transition_event_id: null,
-        open_diff_review_id: null
+        open_diff_review_id: null,
+        locator_path: null
       })
     ).toThrowError(
       expect.objectContaining({ code: "FINDING_ACCEPTED_RISK_REQUIRES_EXPIRY" })

@@ -11,6 +11,7 @@ import { validateRelativePath } from "./paths.js";
  * functions and the locator shapes until then.
  */
 
+// TODO(gate): migrate to protocol.HashSchema in step ①b (CR-M-066).
 const HashSchema = z.string().regex(/^[a-f0-9]{64}$/);
 
 export const FileRangeEvidenceSchema = z
@@ -153,6 +154,7 @@ export function hashFileLineRange(
   endLine: number
 ): string {
   // Split on raw 0x0A; no encoding or CRLF normalization (DESIGN §1).
+  // A file without LF is a single line (binary case).
   const parts: Buffer[] = [];
   let start = 0;
   for (let i = 0; i < bytes.length; i += 1) {

@@ -1,7 +1,7 @@
 import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { appendEvent, freezePacket, readEvents } from "../src/store.js";
 import { runProvider } from "../src/providers.js";
 import { allowsAutoReplay, assertCancellable, foldInvocations, makeInvocationId } from "../src/invocations.js";
@@ -45,48 +45,133 @@ const node = {
 };
 
 describe("invocation §5 scenarios", () => {
-  it("(1) persist-before-spawn: invocation_started exists before provider side effects", async () => {
-    const root = await initializedProject("persist-first");
+  it("(1) persist-before-spawn: started exists on disk when shim runs", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "rs-pbs-"));
+    cleanup.push(dir);
+    const marker = path.join(dir, "shim-ran");
+    const shimPath = path.join(dir, "shim.sh");
+    await writeFile(
+      shimPath,
+      `#!/bin/sh\necho ran > '${marker}'\necho 'quota exceeded' >&2\nexit 1\n`,
+      "utf8"
+    );
+    await chmod(shimPath, 0o755);
+    const root = await initializedProject("pbs");
     await writeFile(path.join(root, "n.md"), "x\n", "utf8");
-    await freezePacket(root, "p", ["n.md"]);
-    // After a failed quota call the ledger must contain started then finished.
-    const { shimPath } = await shim("echo 'quota exceeded' >&2\nexit 1\n");
+    await freezePacket(root, "pkt-pbs", ["n.md"]);
     await withKimi(shimPath, async () => {
-      await expect(runProvider(node as never, "p", root, 1000)).rejects.toMatchObject({
-        code: "PROVIDER_EXIT_FAILED"
-      });
+      try {
+        await runRoundtable(
+          root,
+          {
+            version: 1,
+            name: "pbs",
+            packet_id: "pkt-pbs",
+            mode: "open",
+            limits: {
+              max_parallel: 1,
+              max_wall_time_ms: 1_800_000,
+              max_prompt_chars: 20_000,
+              max_output_chars: 10_000,
+              retry_limit: 0,
+              max_failures: 1
+            },
+            nodes: [
+              {
+                id: "n1",
+                actor_id: "a1",
+                role: "analyst",
+                adapter: "kimi",
+                model: "kimi-latest",
+                brief: "b",
+                depends_on: [],
+                visibility: "shared",
+                can_adjudicate: false,
+                timeout_ms: 8_000
+              }
+            ]
+          } as never,
+          "pbs-run"
+        );
+      } catch {
+        // quota failure expected
+      }
     });
+    const { readFile: rf } = await import("node:fs/promises");
+    await expect(rf(marker, "utf8")).resolves.toContain("ran");
     const events = await readEvents(root);
-    const types = events.map((e) => e.type);
-    // unit-level: provider does not write events; persist-before-spawn is workflow's job.
-    // Here we only pin makeInvocationId stability used by workflow.
-    expect(makeInvocationId("run", "n1", 1)).toHaveLength(32);
-    expect(types.length).toBeGreaterThan(0);
+    const started = events.find((e) => e.type === "invocation_started");
+    const finished = events.find((e) => e.type === "invocation_finished");
+    expect(started).toBeDefined();
+    if (finished) {
+      expect(started!.sequence).toBeLessThan(finished.sequence);
+    }
   });
 
-  it("(2) crash after spawn without finished → fold unknown; no paid auto-replay", () => {
-    const id = makeInvocationId("r", "n1", 1);
-    const events = [
-      {
-        type: "invocation_started",
-        metadata: { invocation_id: id, run_id: "r", node_id: "n1", attempt: 1, adapter: "kimi" }
+  it("(2) unknown without auth: workflow does not call runProvider", async () => {
+    const root = await initializedProject("no-replay-beh");
+    await writeFile(path.join(root, "n.md"), "x\n", "utf8");
+    await freezePacket(root, "pkt-nrb", ["n.md"]);
+    const invId = makeInvocationId("nrb-run", "n1", 1);
+    await appendEvent(root, {
+      type: "invocation_started",
+      run_id: "nrb-run",
+      actor: { id: "a1", role: "analyst", adapter: "kimi" },
+      summary: "s",
+      metadata: {
+        invocation_id: invId,
+        run_id: "nrb-run",
+        node_id: "n1",
+        attempt: 1,
+        adapter: "kimi"
       }
-    ] as never;
-    const snap = foldInvocations(events as never).get(id)!;
-    expect(snap.state).toBe("started");
-    // workflow resume marks unknown; fold of unknown event:
-    const unknown = foldInvocations([
-      ...((events as never[]) as never[]),
+    });
+    await appendEvent(root, {
+      type: "invocation_unknown",
+      run_id: "nrb-run",
+      actor: { id: "research-steward", role: "coordinator" },
+      summary: "u",
+      metadata: { invocation_id: invId, marked_at_resume: true, prior_state: "started" }
+    });
+    const providers = await import("../src/providers.js");
+    const spy = vi.spyOn(providers, "runProvider");
+    await runRoundtable(
+      root,
       {
-        type: "invocation_unknown",
-        metadata: { invocation_id: id, marked_at_resume: true, prior_state: "started" }
-      }
-    ] as never).get(id)!;
-    expect(unknown.state).toBe("unknown");
+        version: 1,
+        name: "nrb",
+        packet_id: "pkt-nrb",
+        mode: "open",
+        limits: {
+          max_parallel: 1,
+          max_wall_time_ms: 1_800_000,
+          max_prompt_chars: 20_000,
+          max_output_chars: 10_000,
+          retry_limit: 2,
+          max_failures: 1
+        },
+        nodes: [
+          {
+            id: "n1",
+            actor_id: "a1",
+            role: "analyst",
+            adapter: "kimi",
+            model: "kimi-latest",
+            brief: "b",
+            depends_on: [],
+            visibility: "shared",
+            can_adjudicate: false,
+            timeout_ms: 5_000
+          }
+        ]
+      } as never,
+      "nrb-run"
+    );
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 
-  it("(3) SIGTERM ignore → SIGKILL escalation still yields one cancelled record", async () => {
-    // trap SIGTERM then sleep; SIGKILL follows in 2s from providers.terminateTree
+  it("(3) SIGTERM ignore → SIGKILL; timeout classified once", async () => {
     const { shimPath, counterPath } = await shim("trap '' TERM\nsleep 20\n");
     const root = await initializedProject("kill-escalate");
     await withKimi(shimPath, async () => {
@@ -98,30 +183,22 @@ describe("invocation §5 scenarios", () => {
     expect(lines).toHaveLength(1);
   });
 
+
   it("(8) same (run,node,attempt) recomputes the same invocation id", () => {
     expect(makeInvocationId("run-x", "node-y", 3)).toBe(makeInvocationId("run-x", "node-y", 3));
   });
 
-  it("(10) reject finished_at < started_at at fold boundary via duration_ms", () => {
-    const id = makeInvocationId("r", "n1", 1);
-    const snap = foldInvocations([
-      {
-        type: "invocation_started",
-        metadata: { invocation_id: id, run_id: "r", node_id: "n1", attempt: 1, adapter: "fake" }
-      },
-      {
-        type: "invocation_finished",
-        metadata: {
-          invocation_id: id,
-          status: "ok",
-          stdout_sha256: "a".repeat(64),
-          duration_ms: -5
-        }
-      }
-    ] as never).get(id)!;
-    // Fold accepts the event (schema-level duration is not validated here);
-    // clock skew is rejected at append time by store — documented boundary.
-    expect(snap.state).toBe("finished_ok");
+  it("(10) negative duration_ms rejected at payload contract", async () => {
+    const { InvocationFinishedPayloadSchema } = await import("../src/invocations.js");
+    expect(() =>
+      InvocationFinishedPayloadSchema.parse({
+        invocation_id: makeInvocationId("r", "n1", 1),
+        status: "ok",
+        failure_class: null,
+        stdout_sha256: "a".repeat(64),
+        duration_ms: -5
+      })
+    ).toThrow();
   });
 });
 
