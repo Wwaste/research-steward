@@ -9,7 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const SCENARIOS = ["g1-crash", "g3-timeout", "g4-quota", "g8-v01-readonly"];
+const SCENARIOS = ["g1-crash", "g3-timeout", "g4-quota", "g5-lease-race", "g8-v01-readonly"];
 
 async function main() {
   const scratch = path.join(here, "..", "..", ".gate-scratch");
