@@ -165,4 +165,76 @@ describe("CR-M-072 budget/permit chain in workflow", () => {
       spawn.mockRestore();
     }
   });
+
+  it("CR-M-083 default budget leaves room for an authorized paid replay", async () => {
+    const { mkdtemp, chmod } = await import("node:fs/promises");
+    const os = await import("node:os");
+    const shimDir = await mkdtemp(path.join(os.tmpdir(), "rs-083-"));
+    const shimPath = path.join(shimDir, "ok.sh");
+    await writeFile(shimPath, "#!/bin/sh\necho ok\n", "utf8");
+    await chmod(shimPath, 0o755);
+    const root = await initializedProject("083-replay");
+    await writeFile(path.join(root, "n.md"), "x\n", "utf8");
+    await freezePacket(root, "pkt-rb", ["n.md"]);
+    const id1 = makeInvocationId("r83", "n1", 1);
+    // Crash attempt 1 (paid kimi) and authorize replay on attempt 2.
+    await appendEvent(root, {
+      type: "invocation_started",
+      run_id: "r83",
+      actor: { id: "a1", role: "analyst", adapter: "kimi" },
+      summary: "crashed paid start",
+      metadata: {
+        invocation_id: id1,
+        run_id: "r83",
+        node_id: "n1",
+        attempt: 1,
+        adapter: "kimi",
+        command_sha256: "a".repeat(64)
+      }
+    });
+    await appendEvent(root, {
+      type: "invocation_unknown",
+      run_id: "r83",
+      actor: { id: "research-steward", role: "coordinator" },
+      summary: "u",
+      metadata: { invocation_id: id1, marked_at_resume: true, prior_state: "started" }
+    });
+    await appendEvent(root, {
+      type: "invocation_replay_authorized",
+      run_id: "r83",
+      actor: { id: "human-lead", role: "authority" },
+      summary: "auth",
+      metadata: {
+        invocation_id: id1,
+        authority: "human-lead",
+        target_attempt: 2
+      }
+    });
+    const prev = process.env.RESEARCH_STEWARD_KIMI_PATH;
+    process.env.RESEARCH_STEWARD_KIMI_PATH = shimPath;
+    try {
+      // No explicit budget_max_invocations — default formula must leave a
+      // replay slot. Old nodes*(retry_limit+1) would see used=1 >= max=1 and
+      // reject before spawn with BUDGET_EXCEEDED.
+      await runRoundtable(root, plan("kimi"), "r83");
+      const events = await readEvents(root);
+      const id2 = makeInvocationId("r83", "n1", 2);
+      expect(
+        events.some((e) => e.type === "invocation_started" && e.metadata["invocation_id"] === id2)
+      ).toBe(true);
+      expect(
+        events.some(
+          (e) =>
+            e.type === "agent_contribution" &&
+            e.metadata["node_id"] === "n1" &&
+            e.metadata["error_code"] === "BUDGET_EXCEEDED"
+        )
+      ).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.RESEARCH_STEWARD_KIMI_PATH;
+      else process.env.RESEARCH_STEWARD_KIMI_PATH = prev;
+      const { rm } = await import("node:fs/promises");
+      await rm(shimDir, { recursive: true, force: true });
+    }
+  });
 });

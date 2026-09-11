@@ -543,13 +543,14 @@ async function runOneNode(
       maxConcurrent: plan.limits.max_parallel,
       staleMs: node.timeout_ms + 30_000
     });
-    // CR-M-072: window/cap come from plan.limits when provided; otherwise a
-    // documented conservative default of the full run wall-clock window.
+    // CR-M-072/083: window/cap come from plan.limits when provided. Default
+    // leaves one authorized-replay slot per node (retry_limit+2) so a
+    // replay_authorized continuation is not squeezed out by the crash attempt.
     const budgetWindowMs =
       plan.limits.budget_window_ms ?? plan.limits.max_wall_time_ms;
     const budgetMax =
       plan.limits.budget_max_invocations ??
-      plan.nodes.length * (plan.limits.retry_limit + 1);
+      plan.nodes.length * (plan.limits.retry_limit + 2);
     // CR-M-072: budget assert + started append share one failure path so a
     // throw before spawn cannot leak the held permit slot.
     try {

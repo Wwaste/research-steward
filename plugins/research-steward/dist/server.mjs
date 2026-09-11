@@ -72962,7 +72962,7 @@ async function runOneNode(root, plan, runId, node2, packetBundle, packetHash, co
       staleMs: node2.timeout_ms + 3e4
     });
     const budgetWindowMs = plan.limits.budget_window_ms ?? plan.limits.max_wall_time_ms;
-    const budgetMax = plan.limits.budget_max_invocations ?? plan.nodes.length * (plan.limits.retry_limit + 1);
+    const budgetMax = plan.limits.budget_max_invocations ?? plan.nodes.length * (plan.limits.retry_limit + 2);
     try {
       if (node2.adapter !== "fake") {
         await assertBudgetAllowsFromLedger({
