@@ -5,7 +5,7 @@ import {
   type CheckPolicyV2,
   type CommandTemplate
 } from "./command-policy.js";
-import { prepareAndRunCheck, type CheckResult } from "./check-runner.js";
+import { prepareAndRunCheck } from "./check-runner.js";
 import { ResearchStewardError, sha256Text, stableJson } from "./utils.js";
 
 /**
@@ -76,7 +76,7 @@ export function createCheckDomain(
 
       // Bridge to the existing check-runner for the actual spawn (process
       // group + wall clock). Template executable is the only allowed binary.
-      const result: CheckResult = await prepareAndRunCheck({
+      const result = await prepareAndRunCheck({
         projectRoot,
         policy: {
           policy_version: 1,
