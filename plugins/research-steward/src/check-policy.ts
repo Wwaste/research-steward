@@ -1,4 +1,5 @@
 import path from "node:path";
+import { realpathSync } from "node:fs";
 import { z } from "zod";
 import { ResearchStewardError } from "./utils.js";
 
@@ -23,7 +24,12 @@ export const CheckPolicyV1Schema = z
 
 export type CheckPolicyV1 = z.infer<typeof CheckPolicyV1Schema>;
 export type CheckPolicy = CheckPolicyV1;
-export const CheckPolicySchema = CheckPolicyV1Schema; // v1 alias (frozen)
+export const CheckPolicyAnySchema = z.discriminatedUnion("policy_version", [
+  CheckPolicyV1Schema,
+  CheckPolicyV2Schema
+]);
+export type CheckPolicyAny = z.infer<typeof CheckPolicyAnySchema>;
+export const CheckPolicySchema = CheckPolicyAnySchema;
 
 export const CheckRequestSchema = z
   .object({
@@ -210,11 +216,15 @@ export function matchArgPattern(
       if (value.includes("\0")) return false;
       if (value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value)) return false;
       if (value.split(/[\\/]/).includes("..")) return false;
-      // realpath + inside() when the path exists
+      // CR-M-064: realpath + inside() so symlink parents cannot escape.
       try {
         const resolved = path.resolve(projectRoot, value);
         const relative = path.relative(projectRoot, resolved);
         if (relative.startsWith("..") || path.isAbsolute(relative)) return false;
+        const realParent = realpathSync(path.dirname(resolved));
+        const real = path.join(realParent, path.basename(resolved));
+        const realRel = path.relative(realpathSync(projectRoot), real);
+        if (realRel.startsWith("..") || path.isAbsolute(realRel)) return false;
       } catch {
         return false;
       }
@@ -222,6 +232,8 @@ export function matchArgPattern(
     }
     case "regex": {
       if (pattern.pattern.length > 500) return false;
+      // Conservative: reject nested quantifiers that enable catastrophic backtracking.
+      if (/\([^)]*[+*][^)]*\)[+*]/.test(pattern.pattern)) return false;
       try {
         return new RegExp(pattern.pattern).test(value);
       } catch {
