@@ -22,6 +22,7 @@ export const CheckPolicyV1Schema = z
   .strict();
 
 export type CheckPolicyV1 = z.infer<typeof CheckPolicyV1Schema>;
+export type CheckPolicy = CheckPolicyV1;
 export const CheckPolicySchema = CheckPolicyV1Schema; // v1 alias (frozen)
 
 export const CheckRequestSchema = z
