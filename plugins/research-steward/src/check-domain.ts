@@ -61,13 +61,13 @@ function commandLineHash(input: {
 }
 
 /**
- * CR-M-082: production entry — accept any parsed v1/v2 policy document.
- * v1 is rejected for the template domain (allowlist has no templates).
+ * CR-M-082: production entry — parse any v1/v2 policy document and return a
+ * live CheckDomain. v1 is rejected for the template domain (no templates).
  */
 export function createCheckDomainFromPolicy(
   projectRoot: string,
   rawPolicy: unknown
-): CheckPolicyV2 {
+): CheckDomain {
   const any = loadCheckPolicy(rawPolicy);
   if (any.policy_version !== 2) {
     throw new ResearchStewardError(
@@ -75,7 +75,7 @@ export function createCheckDomainFromPolicy(
       "Command domain requires policy_version 2 (templates)."
     );
   }
-  return any;
+  return createCheckDomain(projectRoot, any);
 }
 
 export function createCheckDomain(

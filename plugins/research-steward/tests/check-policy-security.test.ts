@@ -169,13 +169,20 @@ describe("CR-M-085 PATH denylist", () => {
 
 
 describe("CR-M-082 wiring", () => {
-  it("createCheckDomainFromPolicy accepts v2 and rejects v1", async () => {
+  it("createCheckDomainFromPolicy returns a live domain for v2", async () => {
+    const root = await temporaryDirectory();
+    const safeBin = await temporaryDirectory();
+    const safe = path.join(safeBin, "echo");
+    await writeFile(safe, "#!/bin/sh\necho ok\n", "utf8");
+    await chmod(safe, 0o755);
     const { createCheckDomainFromPolicy } = await import("../src/check-domain.js");
-    const v2 = createCheckDomainFromPolicy(await temporaryDirectory(), {
+    const domain = createCheckDomainFromPolicy(root, {
       policy_version: 2,
-      templates: [{ template_id: "t", executable: "/usr/bin/true", argv_pattern: [] }]
+      templates: [{ template_id: "t", executable: "echo", argv_pattern: [] }],
+      path_dirs: [safeBin]
     });
-    expect(v2.policy_version).toBe(2);
+    const evidence = await domain.runPolicyCheck({ template_id: "t", argv: [] });
+    expect(evidence.exit_code).toBe(0);
     expect(() =>
       createCheckDomainFromPolicy("/tmp", { policy_version: 1, allowlist: ["/usr/bin/true"] })
     ).toThrowError(expect.objectContaining({ code: "CHECK_POLICY_VERSION_UNSUPPORTED" }));
