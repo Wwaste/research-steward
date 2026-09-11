@@ -2,7 +2,6 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chmod, mkdtemp, writeFile as wf } from "node:fs/promises";
 import os from "node:os";
-import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { freezePacket } from "../src/store.js";
 import { runRoundtable } from "../src/workflow.js";
