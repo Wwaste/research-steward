@@ -72338,7 +72338,12 @@ var InvocationStartedPayloadSchema = external_exports.object({
   adapter: external_exports.string().min(1),
   model: external_exports.string().max(100).optional(),
   pid: external_exports.number().int().optional(),
-  command_sha256: Hash
+  command_sha256: Hash,
+  /** CR-M-076 / DESIGN R1.3: retry decision carried on the next started. */
+  retry_context: external_exports.object({
+    reason: external_exports.string().min(1).max(200),
+    backoff_ms: external_exports.number().int().min(0).optional()
+  }).optional()
 }).strict();
 var InvocationFinishedPayloadSchema = external_exports.object({
   invocation_id: external_exports.string().regex(/^[a-f0-9]{32}$/),
@@ -72969,6 +72974,15 @@ async function runOneNode(root, plan, runId, node2, packetBundle, packetHash, co
           runtimeRoot
         });
       }
+      const commandSha256 = sha256Text(
+        stableJson({
+          adapter: node2.adapter,
+          model: node2.model ?? null,
+          node_id: node2.id,
+          attempt: attempts,
+          timeout_ms: effectiveNode.timeout_ms
+        })
+      );
       await appendCoordinatorEvent(root, assertCoordinatorOwned, {
         type: "invocation_started",
         run_id: runId,
@@ -72990,7 +73004,13 @@ async function runOneNode(root, plan, runId, node2, packetBundle, packetHash, co
           attempt: attempts,
           adapter: node2.adapter,
           ...node2.model ? { model: node2.model } : {},
-          retry_reason: lastRetryDecision?.reason ?? null
+          command_sha256: commandSha256,
+          ...lastRetryDecision ? {
+            retry_context: {
+              reason: lastRetryDecision.reason,
+              ...lastRetryDecision.backoff_ms !== void 0 ? { backoff_ms: lastRetryDecision.backoff_ms } : {}
+            }
+          } : {}
         }
       });
     } catch (error61) {

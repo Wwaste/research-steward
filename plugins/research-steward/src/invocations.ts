@@ -256,7 +256,14 @@ export const InvocationStartedPayloadSchema = z
     adapter: z.string().min(1),
     model: z.string().max(100).optional(),
     pid: z.number().int().optional(),
-    command_sha256: Hash
+    command_sha256: Hash,
+    /** CR-M-076 / DESIGN R1.3: retry decision carried on the next started. */
+    retry_context: z
+      .object({
+        reason: z.string().min(1).max(200),
+        backoff_ms: z.number().int().min(0).optional()
+      })
+      .optional()
   })
   .strict();
 

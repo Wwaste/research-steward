@@ -565,6 +565,17 @@ async function runOneNode(
         });
       }
       // persist-before-spawn (DESIGN-INVOCATION-LEDGER step 4)
+      // CR-M-076: started payload matches InvocationStartedPayloadSchema
+      // (command_sha256 required; retry_context replaces retry_reason).
+      const commandSha256 = sha256Text(
+        stableJson({
+          adapter: node.adapter,
+          model: node.model ?? null,
+          node_id: node.id,
+          attempt: attempts,
+          timeout_ms: effectiveNode.timeout_ms
+        })
+      );
       await appendCoordinatorEvent(root, assertCoordinatorOwned, {
         type: "invocation_started",
         run_id: runId,
@@ -586,7 +597,17 @@ async function runOneNode(
           attempt: attempts,
           adapter: node.adapter,
           ...(node.model ? { model: node.model } : {}),
-          retry_reason: lastRetryDecision?.reason ?? null
+          command_sha256: commandSha256,
+          ...(lastRetryDecision
+            ? {
+                retry_context: {
+                  reason: lastRetryDecision.reason,
+                  ...(lastRetryDecision.backoff_ms !== undefined
+                    ? { backoff_ms: lastRetryDecision.backoff_ms }
+                    : {})
+                }
+              }
+            : {})
         }
       });
     } catch (error) {
