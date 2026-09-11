@@ -34,7 +34,7 @@ describe("claim-evidence matrix (Task 3.5)", () => {
         kind: "command_result",
         executable: "Rscript",
         argv: ["summarize.R"],
-        cwd: "/project",
+        cwd: "analysis/run",
         exit_code: 0,
         stdout_sha256: H,
         stderr_sha256: H
@@ -52,7 +52,7 @@ describe("claim-evidence matrix (Task 3.5)", () => {
       addEvidenceLink(matrix, {
         claim_id: "NOPE",
         relation: "supports",
-        evidence: { kind: "doi", doi: "10.1/x" },
+        evidence: { kind: "doi", doi: "10.1234/abc" },
         strength: "weak"
       })
     ).toThrowError(expect.objectContaining({ code: "CLAIM_NOT_FOUND" }));
