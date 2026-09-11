@@ -196,3 +196,46 @@ describe("CR-M-082 wiring", () => {
     ).toThrowError(expect.objectContaining({ code: "CHECK_POLICY_VERSION_UNSUPPORTED" }));
   });
 });
+
+describe("CR-M-088 v1 denylist + typed policy load errors", () => {
+  it("authorizeCheckRequest v1 rejects denylisted env even when listed in allowed_env", async () => {
+    const { authorizeCheckRequest } = await import("../src/check-policy.js");
+    const root = await temporaryDirectory();
+    const policy = {
+      policy_version: 1 as const,
+      allowlist: ["/usr/bin/true"],
+      allow_network: false,
+      max_wall_time_ms: 1000,
+      max_output_bytes: 1024,
+      max_concurrency: 1,
+      allowed_env: ["PATH", "LANG"],
+      extra_cwd_roots: []
+    };
+    expect(() =>
+      authorizeCheckRequest(
+        policy,
+        { executable: "/usr/bin/true", argv: [], env: { PATH: "/evil/bin" } },
+        root,
+        (p) => p
+      )
+    ).toThrowError(expect.objectContaining({ code: "CHECK_ENV_DENYLISTED" }));
+    expect(() =>
+      authorizeCheckRequest(
+        policy,
+        { executable: "/usr/bin/true", argv: [], env: { LANG: "C" } },
+        root,
+        (p) => p
+      )
+    ).not.toThrow();
+  });
+
+  it("loadCheckPolicy wraps invalid documents as CHECK_POLICY_INVALID", async () => {
+    const { loadCheckPolicy } = await import("../src/check-policy.js");
+    expect(() => loadCheckPolicy({ policy_version: 99 })).toThrowError(
+      expect.objectContaining({ code: "CHECK_POLICY_INVALID" })
+    );
+    expect(() => loadCheckPolicy(null)).toThrowError(
+      expect.objectContaining({ code: "CHECK_POLICY_INVALID" })
+    );
+  });
+});

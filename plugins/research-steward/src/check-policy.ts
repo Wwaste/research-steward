@@ -103,6 +103,15 @@ export function authorizeCheckRequest(
   }
   if (request.env !== undefined) {
     for (const key of Object.keys(request.env)) {
+      // CR-M-088: v1 callers get the same denylist as v2 — PATH and loader
+      // hijack keys are never inheritable even if listed in allowed_env.
+      if (isDenylistedEnvKey(key)) {
+        throw new ResearchStewardError(
+          "CHECK_ENV_DENYLISTED",
+          `Environment variable ${key} is denylisted for command execution.`,
+          { key }
+        );
+      }
       if (!policy.allowed_env.includes(key)) {
         throw new ResearchStewardError(
           "CHECK_ENV_NOT_ALLOWED",
@@ -415,5 +424,20 @@ export async function usableExtraCwdRoots(
 
 /** CR-M-082: single production entry for v1/v2 policy documents. */
 export function loadCheckPolicy(raw: unknown): CheckPolicyAny {
-  return CheckPolicyAnySchema.parse(raw);
+  try {
+    return CheckPolicyAnySchema.parse(raw);
+  } catch (error) {
+    // CR-M-088: never surface a bare ZodError — callers rely on typed codes.
+    if (error instanceof ResearchStewardError) throw error;
+    throw new ResearchStewardError(
+      "CHECK_POLICY_INVALID",
+      "Check policy document failed schema validation.",
+      {
+        issues:
+          typeof error === "object" && error !== null && "issues" in error
+            ? (error as { issues?: unknown }).issues
+            : undefined
+      }
+    );
+  }
 }
