@@ -99,12 +99,15 @@ describe("invocation §5 scenarios", () => {
     });
     const { readFile: rf, cp, mkdir: mk } = await import("node:fs/promises");
     await expect(rf(marker, "utf8")).resolves.toContain("ran");
-    // Falsifiable: copy ledger events into marker dir while shim "runs".
+    // Honest note (3dc3f53 BLOCKED): this copy runs after runRoundtable
+    // returns; it only proves the ledger contains invocation_started after
+    // the shim ran — not the mid-flight order. Mid-flight order is asserted
+    // by sequence: started < finished below.
     const copyDir = path.join(dir, "events-copy");
     await mk(copyDir, { recursive: true });
     await cp(path.join(root, ".research", "events"), copyDir, { recursive: true });
-    const copied = (await import("node:fs/promises")).readdir(copyDir);
-    expect((await copied).length).toBeGreaterThan(0);
+    const copied = await (await import("node:fs/promises")).readdir(copyDir);
+    expect(copied.length).toBeGreaterThan(0);
     const events = await readEvents(root);
     const started = events.find((e) => e.type === "invocation_started");
     const finished = events.find((e) => e.type === "invocation_finished");

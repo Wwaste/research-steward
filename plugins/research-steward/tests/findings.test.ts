@@ -125,3 +125,20 @@ describe("finding fold (DESIGN-EVIDENCE §3)", () => {
     );
   });
 });
+
+
+describe("CR-M-077 P5 locator priority", () => {
+  it("structured locator wins even when v1 string appears first", async () => {
+    const { extractLocatorPath } = await import("../src/findings.js");
+    const p = extractLocatorPath({
+      evidence: [
+        { locator: "methods section", kind: "source" },
+        {
+          kind: "structured",
+          locator: { kind: "file_range", path: "data/t.csv" }
+        }
+      ]
+    });
+    expect(p).toBe("data/t.csv");
+  });
+});

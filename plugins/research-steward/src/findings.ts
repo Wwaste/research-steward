@@ -54,7 +54,7 @@ export function isLegalFindingTransition(from: FindingFoldState, to: FindingFold
   return ALLOWED[from].includes(to);
 }
 
-function extractLocatorPath(finding: unknown): string | null {
+export function extractLocatorPath(finding: unknown): string | null {
   if (finding === null || typeof finding !== "object") return null;
   const f = finding as { evidence?: unknown; locator?: unknown };
   if (Array.isArray(f.evidence)) {
