@@ -632,7 +632,7 @@ async function runOneNode(
           status: "failed",
           failure_class: failureClass,
           duration_ms: errorDetails["duration_ms"] ?? 0,
-          stderr_hash: errorDetails["stderr_hash"],
+          stderr_sha256: errorDetails["stderr_hash"],
           pid: processPid
         }
       });

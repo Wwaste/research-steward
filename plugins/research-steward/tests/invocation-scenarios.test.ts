@@ -208,6 +208,92 @@ describe("invocation §5 scenarios", () => {
   });
 });
 
+describe("CR-M-071 production replay (auth→new attempt)", () => {
+  it("authorized unknown resumes with a new invocation_id attempt", async () => {
+    process.env.RESEARCH_STEWARD_ENABLE_FAKE_ADAPTER = "1";
+    const root = await initializedProject("auth-replay");
+    await writeFile(path.join(root, "n.md"), "x\n", "utf8");
+    await freezePacket(root, "pkt-ar", ["n.md"]);
+    const id1 = makeInvocationId("ar-run", "n1", 1);
+    await appendEvent(root, {
+      type: "invocation_started",
+      run_id: "ar-run",
+      actor: { id: "a1", role: "analyst", adapter: "fake" },
+      summary: "s",
+      metadata: {
+        invocation_id: id1,
+        run_id: "ar-run",
+        node_id: "n1",
+        attempt: 1,
+        adapter: "fake",
+        command_sha256: "a".repeat(64)
+      }
+    });
+    await appendEvent(root, {
+      type: "invocation_unknown",
+      run_id: "ar-run",
+      actor: { id: "research-steward", role: "coordinator" },
+      summary: "u",
+      metadata: { invocation_id: id1, marked_at_resume: true, prior_state: "started" }
+    });
+    await appendEvent(root, {
+      type: "invocation_replay_authorized",
+      run_id: "ar-run",
+      actor: { id: "human-lead", role: "authority" },
+      summary: "auth",
+      metadata: {
+        invocation_id: id1,
+        authority: "human-lead",
+        note: "ok",
+        target_attempt: 2
+      }
+    });
+    try {
+      await runRoundtable(
+        root,
+        {
+          version: 1,
+          name: "ar",
+          packet_id: "pkt-ar",
+          mode: "open",
+          limits: {
+            max_parallel: 1,
+            max_wall_time_ms: 1_800_000,
+            max_prompt_chars: 20_000,
+            max_output_chars: 10_000,
+            retry_limit: 0,
+            max_failures: 1
+          },
+          nodes: [
+            {
+              id: "n1",
+              actor_id: "a1",
+              role: "analyst",
+              adapter: "fake",
+              brief: "b",
+              depends_on: [],
+              visibility: "shared",
+              can_adjudicate: false,
+              timeout_ms: 5_000
+            }
+          ]
+        } as never,
+        "ar-run"
+      );
+    } finally {
+      delete process.env.RESEARCH_STEWARD_ENABLE_FAKE_ADAPTER;
+    }
+    const events = await readEvents(root);
+    const id2 = makeInvocationId("ar-run", "n1", 2);
+    const started2 = events.find(
+      (e) =>
+        e.type === "invocation_started" && e.metadata["invocation_id"] === id2
+    );
+    expect(started2).toBeDefined();
+    expect(started2!.metadata["attempt"]).toBe(2);
+  });
+});
+
 describe("CR-M-060 residual scenarios (narrowed per #22)", () => {
   it("(4) kill race: ledger folds finished_failed; cancel of terminal is typed", async () => {
     const { shimPath } = await shim("echo 'quota exceeded' >&2\nexit 1\n");

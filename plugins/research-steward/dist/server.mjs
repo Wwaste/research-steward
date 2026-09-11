@@ -72337,6 +72337,7 @@ var InvocationFinishedPayloadSchema = external_exports.object({
   failure_class: FailureClassSchema.nullable(),
   stdout_sha256: Hash.optional(),
   stderr_sha256: Hash.optional(),
+  pid: external_exports.number().int().optional(),
   duration_ms: external_exports.number().int().min(0)
 }).strict().superRefine((v, ctx) => {
   if (v.status === "ok" && (v.stdout_sha256 === void 0 || v.failure_class !== null)) {
@@ -72966,7 +72967,7 @@ async function runOneNode(root, plan, runId, node2, packetBundle, packetHash, co
           status: "failed",
           failure_class: failureClass,
           duration_ms: errorDetails["duration_ms"] ?? 0,
-          stderr_hash: errorDetails["stderr_hash"],
+          stderr_sha256: errorDetails["stderr_hash"],
           pid: processPid
         }
       });

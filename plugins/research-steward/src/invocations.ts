@@ -266,6 +266,7 @@ export const InvocationFinishedPayloadSchema = z
     failure_class: FailureClassSchema.nullable(),
     stdout_sha256: Hash.optional(),
     stderr_sha256: Hash.optional(),
+    pid: z.number().int().optional(),
     duration_ms: z.number().int().min(0)
   })
   .strict()
