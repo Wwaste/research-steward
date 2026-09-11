@@ -543,12 +543,18 @@ async function runOneNode(
       maxConcurrent: plan.limits.max_parallel,
       staleMs: node.timeout_ms + 30_000
     });
+    // CR-M-072: window/cap come from plan.limits when provided; otherwise a
+    // documented conservative default of the full run wall-clock window.
+    const budgetWindowMs =
+      plan.limits.budget_window_ms ?? plan.limits.max_wall_time_ms;
+    const budgetMax =
+      plan.limits.budget_max_invocations ??
+      plan.nodes.length * (plan.limits.retry_limit + 1);
     try {
       assertBudgetAllowsFromLedger({
         events: coordinatorEvents,
-        window_start: new Date(Date.now() - plan.limits.max_wall_time_ms).toISOString(),
-        max_invocations:
-          plan.limits.max_failures * 4 + plan.nodes.length * (plan.limits.retry_limit + 1),
+        window_start: new Date(Date.now() - budgetWindowMs).toISOString(),
+        max_invocations: budgetMax,
         provider: node.adapter,
         permit_token: permit.token
       });
@@ -584,11 +590,16 @@ async function runOneNode(
     let result: Awaited<ReturnType<typeof runProvider>>;
     let processPid: number | undefined;
     try {
-      result = await runProvider(effectiveNode, prompt, root, plan.limits.max_output_chars, {
-        onProcess: (handle) => {
-          processPid = handle.pid;
-        }
-      });
+      try {
+        result = await runProvider(effectiveNode, prompt, root, plan.limits.max_output_chars, {
+          onProcess: (handle) => {
+            processPid = handle.pid;
+          }
+        });
+      } catch (e) {
+        await permit.release();
+        throw e;
+      }
       await permit.release();
       await appendCoordinatorEvent(root, assertCoordinatorOwned, {
         type: "invocation_finished",
@@ -917,7 +928,9 @@ export async function runRoundtable(
           (snap) =>
             snap.node_id === node.id &&
             snap.state === "unknown" &&
-            !allowsAutoReplay(snap, { resume_policy: "explicit" })
+            !allowsAutoReplay(snap, {
+              resume_policy: plan.limits.resume_policy ?? "explicit"
+            })
         );
         if (nodeUnknown) {
           await appendCoordinatorEvent(root, assertCoordinatorOwned, {

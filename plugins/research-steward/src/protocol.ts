@@ -182,7 +182,12 @@ export const RoundtablePlanSchema = z
         max_prompt_chars: z.number().int().min(1_000).max(500_000).default(120_000),
         max_output_chars: z.number().int().min(1_000).max(200_000).default(60_000),
         retry_limit: z.number().int().min(0).max(2).default(1),
-        max_failures: z.number().int().min(0).max(32).default(3)
+        max_failures: z.number().int().min(0).max(32).default(3),
+        // CR-M-072 R1: explicit budget window/cap and resume policy (optional
+        // so existing fixtures keep parsing; defaults documented).
+        budget_window_ms: z.number().int().min(1_000).max(86_400_000).optional(),
+        budget_max_invocations: z.number().int().min(1).max(100_000).optional(),
+        resume_policy: z.enum(["never", "fake_only", "explicit"]).optional()
       })
       .strict(),
     nodes: z.array(RoundtableNodeSchema).min(1).max(32)

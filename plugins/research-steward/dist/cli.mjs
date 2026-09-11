@@ -57625,7 +57625,12 @@ var RoundtablePlanSchema = external_exports.object({
     max_prompt_chars: external_exports.number().int().min(1e3).max(5e5).default(12e4),
     max_output_chars: external_exports.number().int().min(1e3).max(2e5).default(6e4),
     retry_limit: external_exports.number().int().min(0).max(2).default(1),
-    max_failures: external_exports.number().int().min(0).max(32).default(3)
+    max_failures: external_exports.number().int().min(0).max(32).default(3),
+    // CR-M-072 R1: explicit budget window/cap and resume policy (optional
+    // so existing fixtures keep parsing; defaults documented).
+    budget_window_ms: external_exports.number().int().min(1e3).max(864e5).optional(),
+    budget_max_invocations: external_exports.number().int().min(1).max(1e5).optional(),
+    resume_policy: external_exports.enum(["never", "fake_only", "explicit"]).optional()
   }).strict(),
   nodes: external_exports.array(RoundtableNodeSchema).min(1).max(32)
 }).strict();
@@ -61225,11 +61230,13 @@ async function runOneNode(root, plan, runId, node2, packetBundle, packetHash, co
       maxConcurrent: plan.limits.max_parallel,
       staleMs: node2.timeout_ms + 3e4
     });
+    const budgetWindowMs = plan.limits.budget_window_ms ?? plan.limits.max_wall_time_ms;
+    const budgetMax = plan.limits.budget_max_invocations ?? plan.nodes.length * (plan.limits.retry_limit + 1);
     try {
       assertBudgetAllowsFromLedger({
         events: coordinatorEvents,
-        window_start: new Date(Date.now() - plan.limits.max_wall_time_ms).toISOString(),
-        max_invocations: plan.limits.max_failures * 4 + plan.nodes.length * (plan.limits.retry_limit + 1),
+        window_start: new Date(Date.now() - budgetWindowMs).toISOString(),
+        max_invocations: budgetMax,
         provider: node2.adapter,
         permit_token: permit.token
       });
@@ -61264,11 +61271,16 @@ async function runOneNode(root, plan, runId, node2, packetBundle, packetHash, co
     let result;
     let processPid;
     try {
-      result = await runProvider(effectiveNode, prompt, root, plan.limits.max_output_chars, {
-        onProcess: (handle) => {
-          processPid = handle.pid;
-        }
-      });
+      try {
+        result = await runProvider(effectiveNode, prompt, root, plan.limits.max_output_chars, {
+          onProcess: (handle) => {
+            processPid = handle.pid;
+          }
+        });
+      } catch (e) {
+        await permit.release();
+        throw e;
+      }
       await permit.release();
       await appendCoordinatorEvent(root, assertCoordinatorOwned, {
         type: "invocation_finished",
@@ -61557,7 +61569,9 @@ async function runRoundtable(root, rawPlan, requestedRunId) {
       const runnableSafe = [];
       for (const node2 of batch) {
         const nodeUnknown = [...invFold.values()].some(
-          (snap) => snap.node_id === node2.id && snap.state === "unknown" && !allowsAutoReplay(snap, { resume_policy: "explicit" })
+          (snap) => snap.node_id === node2.id && snap.state === "unknown" && !allowsAutoReplay(snap, {
+            resume_policy: plan.limits.resume_policy ?? "explicit"
+          })
         );
         if (nodeUnknown) {
           await appendCoordinatorEvent(root, assertCoordinatorOwned, {
