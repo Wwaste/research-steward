@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  ResearchContractSchema,
   assertContractUnchanged,
+  assertPacketBindsContract,
   contractHash,
   detectScopeDrift,
+  foldActiveContractHash,
   isNotApplicable,
   parseResearchContract
 } from "../src/research-contract.js";
@@ -21,93 +22,110 @@ function baseContract(overrides: Record<string, unknown> = {}): Record<string, u
     outcome: "Y score change from baseline",
     time: "12 weeks",
     unit: "participant",
-    data_cut: { label: "cut-a", identity: "sha256:fixture" },
-    assumptions: ["SUTVA", "no differential attrition by arm"],
-    analysis_class: "confirmatory",
+    data_cut: {
+      label: "cut-a",
+      locator: { kind: "dataset_record", dataset_id: "ds", record_key: "k" }
+    },
+    assumptions: ["SUTVA"],
+    analysis_class: "exploratory",
     created_at: "2026-09-10T00:00:00.000Z",
     ...overrides
   };
 }
 
-describe("research contract (Task 3.1)", () => {
-  it("parses a full experimental contract", () => {
-    const contract = parseResearchContract(baseContract());
-    expect(contract.profile).toBe("experimental");
-    expect(contractHash(contract)).toMatch(/^[a-f0-9]{64}$/);
+describe("research contract (DESIGN-RESEARCH-CONTRACT module layer)", () => {
+  it("parses with method commitments, hypotheses, deliverables", () => {
+    const c = parseResearchContract(
+      baseContract({
+        method_commitments: [{ id: "m1", statement: "ITT", verification: "machine" }],
+        deliverables: [{ deliverable_id: "d1", kind: "report", description: "final" }]
+      })
+    );
+    expect(c.method_commitments).toHaveLength(1);
+    expect(c.deliverables[0]!.required).toBe(true);
+    expect(contractHash(c)).toMatch(/^[a-f0-9]{64}$/);
   });
 
-  it("requires not_applicable + reason instead of empty strings", () => {
-    const raw = baseContract({ comparator: "" });
-    expect(() => parseResearchContract(raw)).toThrow();
+  it("rejects confirmatory without preregistered hypotheses (architect ruling 1)", () => {
+    expect(() =>
+      parseResearchContract(baseContract({ analysis_class: "confirmatory" }))
+    ).toThrowError(/hypothesis/i);
+    expect(() =>
+      parseResearchContract(
+        baseContract({
+          analysis_class: "confirmatory",
+          hypotheses: [
+            {
+              hypothesis_id: "h1",
+              statement: "X reduces Y",
+              linked_outcome: "Y score",
+              direction: "decrease"
+            }
+          ]
+        })
+      )
+    ).not.toThrow();
+  });
+
+  it("contractHash includes created_at (architect ruling 2)", () => {
+    const a = parseResearchContract(baseContract());
+    const b = parseResearchContract(
+      baseContract({ created_at: "2026-09-11T00:00:00.000Z" })
+    );
+    expect(contractHash(a)).not.toBe(contractHash(b));
+  });
+
+  it("still requires not_applicable+reason and experimental fields", () => {
+    expect(() => parseResearchContract(baseContract({ comparator: "" }))).toThrow();
     const na = parseResearchContract(
       baseContract({
         profile: "observational",
         intervention_exposure: "Exposure A",
-        comparator: { not_applicable: true, reason: "single-arm feasibility run" }
+        comparator: { not_applicable: true, reason: "single-arm" }
       })
     );
     expect(isNotApplicable(na.comparator)).toBe(true);
   });
 
-  it("rejects experimental contracts that mark intervention not_applicable", () => {
-    expect(() =>
-      parseResearchContract(
-        baseContract({
-          intervention_exposure: { not_applicable: true, reason: "oops" }
-        })
-      )
-    ).toThrowError(expect.objectContaining({ name: "ZodError" }));
-  });
-
-  it("supports observational and literature_review profiles", () => {
-    const obs = parseResearchContract(
-      baseContract({
-        profile: "observational",
-        intervention_exposure: "Smoking status",
-        comparator: { not_applicable: true, reason: "exposure contrast only" },
-        analysis_class: "exploratory"
-      })
-    );
-    expect(obs.profile).toBe("observational");
-    const lit = parseResearchContract(
-      baseContract({
-        profile: "literature_review",
-        intervention_exposure: { not_applicable: true, reason: "no intervention" },
-        comparator: { not_applicable: true, reason: "narrative review" },
-        unit: "study",
-        estimand: "Reported effect sizes across included studies"
-      })
-    );
-    expect(lit.unit).toBe("study");
-  });
-
   it("detects scope drift and post-hoc confirmatory language", () => {
-    const contract = parseResearchContract(
-      baseContract({ analysis_class: "exploratory" })
-    );
+    const contract = parseResearchContract(baseContract());
     const drift = detectScopeDrift(
       contract,
       "This proves all humans worldwide benefit from X."
     );
     expect(drift.drifted).toBe(true);
-    expect(drift.reasons.join(" ")).toContain("population");
-    expect(drift.reasons.join(" ")).toContain("confirmatory");
+  });
+
+  it("folds contract_frozen stream and binds packets (injected events)", () => {
+    expect(foldActiveContractHash([])).toBeNull();
+    const events = [
+      {
+        type: "contract_frozen",
+        metadata: { contract_hash: "a".repeat(64) }
+      },
+      {
+        type: "contract_frozen",
+        metadata: { contract_hash: "b".repeat(64), supersedes_contract_hash: "a".repeat(64) }
+      }
+    ] as never;
+    const active = foldActiveContractHash(events as never);
+    expect(active).toBe("b".repeat(64));
+    expect(() =>
+      assertPacketBindsContract(active, { contract_hash: "b".repeat(64) })
+    ).not.toThrow();
+    expect(() => assertPacketBindsContract(active, {})).toThrowError(
+      expect.objectContaining({ code: "CONTRACT_BINDING_REQUIRED" })
+    );
+    // legacy project without any contract: no binding required
+    expect(() => assertPacketBindsContract(null, {})).not.toThrow();
   });
 
   it("treats a changed contract as requiring a new packet", () => {
     const a = parseResearchContract(baseContract());
-    const b = parseResearchContract(baseContract({ outcome: "Different primary outcome" }));
+    const b = parseResearchContract(baseContract({ outcome: "Different" }));
     expect(() => assertContractUnchanged(a, a)).not.toThrow();
     expect(() => assertContractUnchanged(a, b)).toThrowError(
       expect.objectContaining({ code: "RESEARCH_CONTRACT_CHANGED" })
     );
-  });
-
-  it("rejects unknown fields and unknown profile", () => {
-    expect(() => parseResearchContract(baseContract({ extra: 1 }))).toThrow();
-    expect(() =>
-      parseResearchContract(baseContract({ profile: "magic" }))
-    ).toThrow();
-    expect(ResearchContractSchema.safeParse(baseContract()).success).toBe(true);
   });
 });

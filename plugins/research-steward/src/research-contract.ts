@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { IdentifierSchema, type CommittedEvent } from "./protocol.js";
+import { EvidenceLocatorSchema } from "./evidence.js";
 import { ResearchStewardError, stableJson } from "./utils.js";
 
 /**
- * Frozen research contract (Task 3.1). The contract is versioned content that
- * freeze/roundtable will depend on: changing it requires a new packet, never a
- * rewrite of the prior conclusion's context.
+ * Frozen research contract (DESIGN-RESEARCH-CONTRACT, module layer).
+ * contract_frozen protocol event + storage stay on the shared-surface gate;
+ * this file owns schema, hash, scope-drift, and fold helpers.
  */
 
 export const CONTRACT_PROFILES = [
@@ -18,7 +20,6 @@ export const CONTRACT_PROFILES = [
 
 export type ContractProfile = (typeof CONTRACT_PROFILES)[number];
 
-/** A field that does not apply must say so explicitly with a reason. */
 export const NotApplicableSchema = z
   .object({
     not_applicable: z.literal(true),
@@ -42,6 +43,34 @@ export function isNotApplicable(
   );
 }
 
+export const PreregisteredHypothesisSchema = z
+  .object({
+    hypothesis_id: IdentifierSchema,
+    statement: z.string().min(1).max(4_000),
+    linked_outcome: z.string().min(1).max(2_000),
+    direction: z
+      .enum(["increase", "decrease", "two_sided", "non_inferiority"])
+      .optional()
+  })
+  .strict();
+
+export const MethodCommitmentSchema = z
+  .object({
+    id: IdentifierSchema,
+    statement: z.string().min(1).max(4_000),
+    verification: z.enum(["machine", "human"])
+  })
+  .strict();
+
+export const DeliverableSchema = z
+  .object({
+    deliverable_id: IdentifierSchema,
+    kind: z.enum(["report", "dataset", "figure", "code", "package", "other"]),
+    description: z.string().min(1).max(2_000),
+    required: z.boolean().default(true)
+  })
+  .strict();
+
 const QuestionSchema = z.string().min(1).max(4_000);
 const ScopeSchema = z.string().min(1).max(2_000);
 const EstimandSchema = z.string().min(1).max(2_000);
@@ -54,7 +83,7 @@ const UnitSchema = z.string().min(1).max(1_000);
 const DataCutSchema = z
   .object({
     label: z.string().min(1).max(200),
-    identity: z.string().min(1).max(500)
+    locator: EvidenceLocatorSchema
   })
   .strict();
 const AssumptionsSchema = z.array(z.string().min(1).max(2_000)).max(64);
@@ -74,14 +103,14 @@ export const ResearchContractSchema = z
     unit: fieldOrNotApplicable(UnitSchema),
     data_cut: fieldOrNotApplicable(DataCutSchema),
     assumptions: fieldOrNotApplicable(AssumptionsSchema),
+    method_commitments: z.array(MethodCommitmentSchema).max(64).default([]),
+    hypotheses: z.array(PreregisteredHypothesisSchema).max(64).default([]),
+    deliverables: z.array(DeliverableSchema).max(64).default([]),
     analysis_class: z.enum(["exploratory", "confirmatory"]),
     created_at: z.string().datetime({ offset: true })
   })
   .strict()
   .superRefine((contract, ctx) => {
-    // Profile-specific required fields: experimental needs
-    // intervention+comparator; observational needs exposure; both need outcome
-    // and unit unless explicitly not_applicable with a reason (already typed).
     if (contract.profile === "experimental") {
       if (isNotApplicable(contract.intervention_exposure)) {
         ctx.addIssue({
@@ -105,10 +134,44 @@ export const ResearchContractSchema = z
         path: ["intervention_exposure"]
       });
     }
+    // Architect ruling 1: confirmatory without preregistered hypotheses is
+    // rejected at parse time (contract incompleteness, not conclusion judging).
+    if (contract.analysis_class === "confirmatory" && contract.hypotheses.length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        message: "confirmatory contracts require at least one preregistered hypothesis",
+        path: ["hypotheses"]
+      });
+    }
+    const hypIds = new Set<string>();
+    for (const h of contract.hypotheses) {
+      if (hypIds.has(h.hypothesis_id)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "hypothesis_id values must be unique",
+          path: ["hypotheses"]
+        });
+        break;
+      }
+      hypIds.add(h.hypothesis_id);
+    }
+    const delIds = new Set<string>();
+    for (const d of contract.deliverables) {
+      if (delIds.has(d.deliverable_id)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "deliverable_id values must be unique",
+          path: ["deliverables"]
+        });
+        break;
+      }
+      delIds.add(d.deliverable_id);
+    }
   });
 
 export type ResearchContract = z.infer<typeof ResearchContractSchema>;
 
+/** Architect ruling 2: created_at is part of contract identity. */
 export function contractHash(contract: ResearchContract): string {
   return createHash("sha256").update(stableJson(contract), "utf8").digest("hex");
 }
@@ -117,10 +180,6 @@ export function parseResearchContract(raw: unknown): ResearchContract {
   return ResearchContractSchema.parse(raw);
 }
 
-/**
- * A contract change invalidates prior conclusion context: callers must freeze
- * a new packet. Compare two contracts by content hash.
- */
 export function assertContractUnchanged(
   previous: ResearchContract,
   next: ResearchContract
@@ -133,7 +192,6 @@ export function assertContractUnchanged(
   }
 }
 
-/** Scope drift: claim text that names a population/outcome outside the contract. */
 export function detectScopeDrift(
   contract: ResearchContract,
   claimText: string
@@ -142,7 +200,6 @@ export function detectScopeDrift(
   if (isNotApplicable(contract.outcome) || isNotApplicable(contract.population)) {
     return { drifted: false, reasons };
   }
-  // Lightweight lexical check: flag explicit expansion markers, not NLP.
   const expansion = /\b(all humans|everyone worldwide|any species|universal effect)\b/i;
   if (expansion.test(claimText)) {
     reasons.push("claim language expands beyond the contract population");
@@ -154,4 +211,36 @@ export function detectScopeDrift(
     }
   }
   return { drifted: reasons.length > 0, reasons };
+}
+
+/**
+ * Fold contract_frozen events (injected until protocol step). Returns the
+ * latest contract hash in the stream, or null.
+ */
+export function foldActiveContractHash(
+  events: readonly CommittedEvent[]
+): string | null {
+  let latest: string | null = null;
+  for (const event of events) {
+    if ((event.type as string) !== "contract_frozen") continue;
+    const h = event.metadata["contract_hash"];
+    if (typeof h === "string") latest = h;
+  }
+  return latest;
+}
+
+/** Architect ruling 5: later packet must bind the active contract hash. */
+export function assertPacketBindsContract(
+  activeContractHash: string | null,
+  packetMetadata: Record<string, unknown>
+): void {
+  if (activeContractHash === null) return; // legacy project without contracts
+  const bound = packetMetadata["contract_hash"];
+  if (typeof bound !== "string" || bound !== activeContractHash) {
+    throw new ResearchStewardError(
+      "CONTRACT_BINDING_REQUIRED",
+      "packet_frozen after contract_frozen must carry the active contract_hash.",
+      { active: activeContractHash }
+    );
+  }
 }
