@@ -60668,6 +60668,9 @@ function allowsAutoReplay(snapshot, opts) {
   if (opts.resume_policy === "fake_only") return snapshot.adapter === "fake";
   return snapshot.replay_authorized && snapshot.replay_authorized_attempt === snapshot.attempt + 1;
 }
+function isTerminal(state) {
+  return state === "finished_ok" || state === "finished_failed" || state === "cancelled";
+}
 var Hash = external_exports.string().regex(/^[a-f0-9]{64}$/);
 var InvocationStartedPayloadSchema = external_exports.object({
   invocation_id: external_exports.string().regex(/^[a-f0-9]{32}$/),
@@ -60739,6 +60742,36 @@ async function authorizeReplay(root, input2) {
     target_attempt: input2.target_attempt,
     ...input2.note !== void 0 ? { note: input2.note } : {}
   });
+  const events = await readEvents(root);
+  const fold = foldInvocations(events.filter((e) => e.run_id === input2.run_id));
+  const snap = fold.get(input2.invocation_id);
+  if (snap === void 0) {
+    throw new ResearchStewardError(
+      "INVOCATION_NOT_FOUND",
+      `No invocation ${input2.invocation_id} in run ${input2.run_id}.`,
+      { invocation_id: input2.invocation_id, run_id: input2.run_id }
+    );
+  }
+  if (isTerminal(snap.state)) {
+    throw new ResearchStewardError(
+      "INVOCATION_ALREADY_TERMINAL",
+      `Invocation ${input2.invocation_id} is already ${snap.state}; replay cannot be authorized.`,
+      { invocation_id: input2.invocation_id, state: snap.state }
+    );
+  }
+  if (snap.state === "started" || snap.state === "cancel_requested") {
+    await appendEvent(root, {
+      type: "invocation_unknown",
+      run_id: input2.run_id,
+      actor: { id: input2.authority, role: "authority" },
+      summary: `Operator marked invocation ${input2.invocation_id} unknown before replay authorization.`,
+      metadata: {
+        invocation_id: input2.invocation_id,
+        marked_at_resume: true,
+        prior_state: snap.state
+      }
+    });
+  }
   return appendEvent(root, {
     type: "invocation_replay_authorized",
     run_id: input2.run_id,
@@ -61656,11 +61689,11 @@ async function runRoundtable(root, rawPlan, requestedRunId) {
       const invFold = foldInvocations(events.filter((e) => e.run_id === runId));
       const runnableSafe = [];
       for (const node2 of batch) {
-        const nodeUnknown = [...invFold.values()].some(
-          (snap) => snap.node_id === node2.id && snap.state === "unknown" && !allowsAutoReplay(snap, {
-            resume_policy: plan.limits.resume_policy ?? "explicit"
-          })
-        );
+        const nodeUnknowns = [...invFold.values()].filter((snap) => snap.node_id === node2.id && snap.state === "unknown").sort((a, b) => b.attempt - a.attempt);
+        const latestUnknown = nodeUnknowns[0];
+        const nodeUnknown = latestUnknown !== void 0 && !allowsAutoReplay(latestUnknown, {
+          resume_policy: plan.limits.resume_policy ?? "explicit"
+        });
         if (nodeUnknown) {
           await appendCoordinatorEvent(root, assertCoordinatorOwned, {
             type: "agent_contribution",
@@ -67425,7 +67458,7 @@ var UrlElicitationRequiredError = class extends McpError {
 };
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/interfaces.js
-function isTerminal(status) {
+function isTerminal2(status) {
   return status === "completed" || status === "failed" || status === "cancelled";
 }
 
@@ -68825,11 +68858,11 @@ var Protocol = class {
           if (!task) {
             throw new McpError(ErrorCode.InvalidParams, `Task not found: ${taskId}`);
           }
-          if (!isTerminal(task.status)) {
+          if (!isTerminal2(task.status)) {
             await this._waitForTaskUpdate(taskId, extra.signal);
             return await handleTaskResult();
           }
-          if (isTerminal(task.status)) {
+          if (isTerminal2(task.status)) {
             const result = await this._taskStore.getTaskResult(taskId, extra.sessionId);
             this._clearTaskQueue(taskId);
             return {
@@ -68864,7 +68897,7 @@ var Protocol = class {
           if (!task) {
             throw new McpError(ErrorCode.InvalidParams, `Task not found: ${request.params.taskId}`);
           }
-          if (isTerminal(task.status)) {
+          if (isTerminal2(task.status)) {
             throw new McpError(ErrorCode.InvalidParams, `Cannot cancel task in terminal status: ${task.status}`);
           }
           await this._taskStore.updateTaskStatus(request.params.taskId, "cancelled", "Client cancelled task execution.", extra.sessionId);
@@ -69232,7 +69265,7 @@ var Protocol = class {
       while (true) {
         const task2 = await this.getTask({ taskId }, options);
         yield { type: "taskStatus", task: task2 };
-        if (isTerminal(task2.status)) {
+        if (isTerminal2(task2.status)) {
           if (task2.status === "completed") {
             const result = await this.getTaskResult({ taskId }, resultSchema, options);
             yield { type: "result", result };
@@ -69654,7 +69687,7 @@ var Protocol = class {
             params: task
           });
           await this.notification(notification);
-          if (isTerminal(task.status)) {
+          if (isTerminal2(task.status)) {
             this._cleanupTaskProgressHandler(taskId);
           }
         }
@@ -69667,7 +69700,7 @@ var Protocol = class {
         if (!task) {
           throw new McpError(ErrorCode.InvalidParams, `Task "${taskId}" not found - it may have been cleaned up`);
         }
-        if (isTerminal(task.status)) {
+        if (isTerminal2(task.status)) {
           throw new McpError(ErrorCode.InvalidParams, `Cannot update task "${taskId}" from terminal status "${task.status}" to "${status}". Terminal states (completed, failed, cancelled) cannot transition to other states.`);
         }
         await taskStore.updateTaskStatus(taskId, status, statusMessage, sessionId);
@@ -69678,7 +69711,7 @@ var Protocol = class {
             params: updatedTask
           });
           await this.notification(notification);
-          if (isTerminal(updatedTask.status)) {
+          if (isTerminal2(updatedTask.status)) {
             this._cleanupTaskProgressHandler(taskId);
           }
         }
@@ -76071,6 +76104,7 @@ Usage:
   research-steward provisional-review --project <dir> --actor <id> --verification <uuid> --note <text> [--review-by <when>]
   research-steward accept --project <dir> --actor <id> --note <text>
   research-steward resolve-block --project <dir> --actor <id> --event <uuid> [--event <uuid>] --note <text>
+  research-steward authorize-replay --project <dir> --run-id <id> --invocation <32-hex> --authority <id> --target-attempt <n> [--note <text>]
   research-steward package --project <dir> --package <id> --file <relative> [--file <relative>]
   research-steward serve-http
   research-steward doctor [--project <dir>]
@@ -76255,8 +76289,13 @@ async function main() {
 var invokedPath = process.argv[1] ? path12.resolve(process.argv[1]) : "";
 if (invokedPath === fileURLToPath2(import.meta.url)) {
   main().catch((error61) => {
-    process.stderr.write(`${errorMessage(error61)}
+    if (error61 instanceof ResearchStewardError) {
+      process.stderr.write(`${error61.code}: ${error61.message}
 `);
+    } else {
+      process.stderr.write(`${errorMessage(error61)}
+`);
+    }
     process.exitCode = 1;
   });
 }

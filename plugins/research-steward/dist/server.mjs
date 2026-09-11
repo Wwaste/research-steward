@@ -72329,6 +72329,9 @@ function allowsAutoReplay(snapshot, opts) {
   if (opts.resume_policy === "fake_only") return snapshot.adapter === "fake";
   return snapshot.replay_authorized && snapshot.replay_authorized_attempt === snapshot.attempt + 1;
 }
+function isTerminal2(state) {
+  return state === "finished_ok" || state === "finished_failed" || state === "cancelled";
+}
 var Hash = external_exports.string().regex(/^[a-f0-9]{64}$/);
 var InvocationStartedPayloadSchema = external_exports.object({
   invocation_id: external_exports.string().regex(/^[a-f0-9]{32}$/),
@@ -72400,6 +72403,36 @@ async function authorizeReplay(root, input2) {
     target_attempt: input2.target_attempt,
     ...input2.note !== void 0 ? { note: input2.note } : {}
   });
+  const events = await readEvents(root);
+  const fold = foldInvocations(events.filter((e) => e.run_id === input2.run_id));
+  const snap = fold.get(input2.invocation_id);
+  if (snap === void 0) {
+    throw new ResearchStewardError(
+      "INVOCATION_NOT_FOUND",
+      `No invocation ${input2.invocation_id} in run ${input2.run_id}.`,
+      { invocation_id: input2.invocation_id, run_id: input2.run_id }
+    );
+  }
+  if (isTerminal2(snap.state)) {
+    throw new ResearchStewardError(
+      "INVOCATION_ALREADY_TERMINAL",
+      `Invocation ${input2.invocation_id} is already ${snap.state}; replay cannot be authorized.`,
+      { invocation_id: input2.invocation_id, state: snap.state }
+    );
+  }
+  if (snap.state === "started" || snap.state === "cancel_requested") {
+    await appendEvent(root, {
+      type: "invocation_unknown",
+      run_id: input2.run_id,
+      actor: { id: input2.authority, role: "authority" },
+      summary: `Operator marked invocation ${input2.invocation_id} unknown before replay authorization.`,
+      metadata: {
+        invocation_id: input2.invocation_id,
+        marked_at_resume: true,
+        prior_state: snap.state
+      }
+    });
+  }
   return appendEvent(root, {
     type: "invocation_replay_authorized",
     run_id: input2.run_id,
@@ -73317,11 +73350,11 @@ async function runRoundtable(root, rawPlan, requestedRunId) {
       const invFold = foldInvocations(events.filter((e) => e.run_id === runId));
       const runnableSafe = [];
       for (const node2 of batch) {
-        const nodeUnknown = [...invFold.values()].some(
-          (snap) => snap.node_id === node2.id && snap.state === "unknown" && !allowsAutoReplay(snap, {
-            resume_policy: plan.limits.resume_policy ?? "explicit"
-          })
-        );
+        const nodeUnknowns = [...invFold.values()].filter((snap) => snap.node_id === node2.id && snap.state === "unknown").sort((a, b) => b.attempt - a.attempt);
+        const latestUnknown = nodeUnknowns[0];
+        const nodeUnknown = latestUnknown !== void 0 && !allowsAutoReplay(latestUnknown, {
+          resume_policy: plan.limits.resume_policy ?? "explicit"
+        });
         if (nodeUnknown) {
           await appendCoordinatorEvent(root, assertCoordinatorOwned, {
             type: "agent_contribution",

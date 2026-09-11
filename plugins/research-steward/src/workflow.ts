@@ -952,14 +952,17 @@ export async function runRoundtable(
       const invFold = foldInvocations(events.filter((e) => e.run_id === runId));
       const runnableSafe: typeof batch = [];
       for (const node of batch) {
-        const nodeUnknown = [...invFold.values()].some(
-          (snap) =>
-            snap.node_id === node.id &&
-            snap.state === "unknown" &&
-            !allowsAutoReplay(snap, {
-              resume_policy: plan.limits.resume_policy ?? "explicit"
-            })
-        );
+        // CR-M-067/071: only the latest unknown attempt gates the node.
+        // Older consumed-series unknowns must not block a later authorized replay.
+        const nodeUnknowns = [...invFold.values()]
+          .filter((snap) => snap.node_id === node.id && snap.state === "unknown")
+          .sort((a, b) => b.attempt - a.attempt);
+        const latestUnknown = nodeUnknowns[0];
+        const nodeUnknown =
+          latestUnknown !== undefined &&
+          !allowsAutoReplay(latestUnknown, {
+            resume_policy: plan.limits.resume_policy ?? "explicit"
+          });
         if (nodeUnknown) {
           await appendCoordinatorEvent(root, assertCoordinatorOwned, {
             type: "agent_contribution",

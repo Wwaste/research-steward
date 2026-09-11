@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { FailureClassSchema, type FailureClass } from "./provider-failure.js";
 import { IdentifierSchema, type CommittedEvent } from "./protocol.js";
-import { appendEvent } from "./store.js";
+import { appendEvent, readEvents } from "./store.js";
 import { ResearchStewardError } from "./utils.js";
 
 /**
@@ -320,9 +320,12 @@ export const InvocationReplayAuthorizedPayloadSchema = z
   .strict();
 
 /**
- * CR-M-071 production emitter: human authority authorizes replaying an
- * unknown invocation on a specific target attempt. CLI and MCP call this;
- * tests may still append the event directly when seeding fixtures.
+ * CR-M-071 production emitter (#45 ruling: authorize entry marks unknown).
+ * Folds the ledger first:
+ * - missing invocation → loud typed error, no event
+ * - started without terminal → operator declares crash: append unknown, then auth
+ * - already unknown → authorize directly
+ * - terminal (ok/failed/cancelled) → loud typed error, no event
  */
 export async function authorizeReplay(
   root: string,
@@ -352,6 +355,39 @@ export async function authorizeReplay(
     target_attempt: input.target_attempt,
     ...(input.note !== undefined ? { note: input.note } : {})
   });
+
+  const events = await readEvents(root);
+  const fold = foldInvocations(events.filter((e) => e.run_id === input.run_id));
+  const snap = fold.get(input.invocation_id);
+  if (snap === undefined) {
+    throw new ResearchStewardError(
+      "INVOCATION_NOT_FOUND",
+      `No invocation ${input.invocation_id} in run ${input.run_id}.`,
+      { invocation_id: input.invocation_id, run_id: input.run_id }
+    );
+  }
+  if (isTerminal(snap.state)) {
+    throw new ResearchStewardError(
+      "INVOCATION_ALREADY_TERMINAL",
+      `Invocation ${input.invocation_id} is already ${snap.state}; replay cannot be authorized.`,
+      { invocation_id: input.invocation_id, state: snap.state }
+    );
+  }
+  if (snap.state === "started" || snap.state === "cancel_requested") {
+    // Operator ruling: the live attempt is treated as crashed.
+    await appendEvent(root, {
+      type: "invocation_unknown",
+      run_id: input.run_id,
+      actor: { id: input.authority, role: "authority" },
+      summary: `Operator marked invocation ${input.invocation_id} unknown before replay authorization.`,
+      metadata: {
+        invocation_id: input.invocation_id,
+        marked_at_resume: true,
+        prior_state: snap.state
+      }
+    });
+  }
+
   return appendEvent(root, {
     type: "invocation_replay_authorized",
     run_id: input.run_id,

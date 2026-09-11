@@ -18,7 +18,7 @@ import { runRoundtable } from "./workflow.js";
 import { authorizeReplay } from "./invocations.js";
 import { runHttpServer } from "./server.js";
 import { packageHandoff } from "./package.js";
-import { errorMessage, writeImmutableFile } from "./utils.js";
+import { errorMessage, ResearchStewardError, writeImmutableFile } from "./utils.js";
 import { runDoctor } from "./doctor.js";
 import { buildPlan, writeLock, writePlanAndLock } from "./planner.js";
 import { buildForecast, writeForecast } from "./forecast.js";
@@ -75,6 +75,7 @@ Usage:
   research-steward provisional-review --project <dir> --actor <id> --verification <uuid> --note <text> [--review-by <when>]
   research-steward accept --project <dir> --actor <id> --note <text>
   research-steward resolve-block --project <dir> --actor <id> --event <uuid> [--event <uuid>] --note <text>
+  research-steward authorize-replay --project <dir> --run-id <id> --invocation <32-hex> --authority <id> --target-attempt <n> [--note <text>]
   research-steward package --project <dir> --package <id> --file <relative> [--file <relative>]
   research-steward serve-http
   research-steward doctor [--project <dir>]
@@ -269,7 +270,11 @@ async function main(): Promise<void> {
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : "";
 if (invokedPath === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
-    process.stderr.write(`${errorMessage(error)}\n`);
+    if (error instanceof ResearchStewardError) {
+      process.stderr.write(`${error.code}: ${error.message}\n`);
+    } else {
+      process.stderr.write(`${errorMessage(error)}\n`);
+    }
     process.exitCode = 1;
   });
 }
