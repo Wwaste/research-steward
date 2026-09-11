@@ -4,7 +4,7 @@
  * runRoundtable against a project. Black-box for the orchestrator.
  */
 import { build } from "esbuild";
-import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, writeFile, mkdir, readdir, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -36,9 +36,32 @@ await build({
 const { realpath } = await import("node:fs/promises");
 const projectRootReal = await realpath(projectRoot);
 const { runRoundtable, freezePacket, initializeProject } = await import(pathToFileURL(out).href);
-await initializeProject(projectRootReal, "g1-driver");
-await writeFile(path.join(projectRootReal, "n.md"), "x\n");
-await await freezePacket(projectRootReal, packetId, ["n.md"]);
+// Resume path (G1/G6): if the project is already initialized+frozen, skip
+// init/freeze so we do not re-take locks the crashed process left behind.
+const eventsDir = path.join(projectRootReal, ".research", "events");
+let alreadySeeded = false;
+try {
+  const names = await readdir(eventsDir);
+  const contents = await Promise.all(
+    names.filter((n) => n.endsWith(".json")).map(async (n) => {
+      try {
+        return await readFile(path.join(eventsDir, n), "utf8");
+      } catch {
+        return "";
+      }
+    })
+  );
+  alreadySeeded = contents.some(
+    (c) => c.includes("packet_frozen") && c.includes(packetId)
+  );
+} catch {
+  alreadySeeded = false;
+}
+if (!alreadySeeded) {
+  await initializeProject(projectRootReal, "g1-driver");
+  await writeFile(path.join(projectRootReal, "n.md"), "x\n");
+  await freezePacket(projectRootReal, packetId, ["n.md"]);
+}
 process.env.RESEARCH_STEWARD_KIMI_PATH = shimPath;
 await runRoundtable(projectRootReal, {
   version: 1,
