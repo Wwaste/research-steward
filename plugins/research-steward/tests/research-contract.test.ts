@@ -129,3 +129,56 @@ describe("research contract (DESIGN-RESEARCH-CONTRACT module layer)", () => {
     );
   });
 });
+
+
+describe("CR-M-074 R1 contract", () => {
+  it("rejects free_text data_cut locator", () => {
+    expect(() =>
+      parseResearchContract(
+        baseContract({
+          data_cut: {
+            label: "cut",
+            locator: { kind: "free_text", text: "somewhere", legacy: true }
+          }
+        })
+      )
+    ).toThrow();
+  });
+
+  it("rejects unknown fields, unknown profile, experimental not_applicable", () => {
+    expect(() => parseResearchContract(baseContract({ extra: 1 }))).toThrow();
+    expect(() => parseResearchContract(baseContract({ profile: "magic" }))).toThrow();
+    expect(() =>
+      parseResearchContract(
+        baseContract({
+          intervention_exposure: { not_applicable: true, reason: "oops" }
+        })
+      )
+    ).toThrow();
+  });
+
+  it("literature_review profile positive case", () => {
+    const c = parseResearchContract(
+      baseContract({
+        profile: "literature_review",
+        intervention_exposure: { not_applicable: true, reason: "no intervention" },
+        comparator: { not_applicable: true, reason: "narrative" },
+        unit: "study",
+        estimand: "Reported effect sizes"
+      })
+    );
+    expect(c.profile).toBe("literature_review");
+  });
+
+  it("evaluateScopeDrift returns machine hints not a verdict", async () => {
+    const { evaluateScopeDrift } = await import("../src/research-contract.js");
+    const c = parseResearchContract(baseContract());
+    const r = evaluateScopeDrift(
+      c,
+      { known_limits: ["single site"] },
+      "This proves all humans worldwide benefit."
+    );
+    expect(r.machine_hints).toContain("claim-language-expands-population");
+    expect(r.needs_human_adjudication).toBe(true);
+  });
+});

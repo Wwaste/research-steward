@@ -80,10 +80,15 @@ const ComparatorSchema = z.string().min(1).max(2_000);
 const OutcomeSchema = z.string().min(1).max(2_000);
 const TimeSchema = z.string().min(1).max(1_000);
 const UnitSchema = z.string().min(1).max(1_000);
+const StructuredLocatorSchema = EvidenceLocatorSchema.refine(
+  (loc) => loc.kind !== "free_text",
+  { message: "data_cut.locator must not be free_text (R1.2)" }
+);
+
 const DataCutSchema = z
   .object({
     label: z.string().min(1).max(200),
-    locator: EvidenceLocatorSchema
+    locator: StructuredLocatorSchema
   })
   .strict();
 const AssumptionsSchema = z.array(z.string().min(1).max(2_000)).max(64);
@@ -243,4 +248,39 @@ export function assertPacketBindsContract(
       { active: activeContractHash }
     );
   }
+}
+
+
+/** R1.1 machine-hint layer: never a verdict — only hints for human adjudication. */
+export const ScopeDeclarationSchema = z
+  .object({
+    population_note: z.string().max(2_000).optional(),
+    outcome_note: z.string().max(2_000).optional(),
+    unit_note: z.string().max(2_000).optional(),
+    known_limits: z.array(z.string().max(1_000)).max(32).default([])
+  })
+  .strict();
+
+export type ScopeDeclaration = z.infer<typeof ScopeDeclarationSchema>;
+
+export function evaluateScopeDrift(
+  contract: ResearchContract,
+  declaration: ScopeDeclaration,
+  claimText: string
+): { machine_hints: string[]; needs_human_adjudication: boolean } {
+  const hints: string[] = [];
+  const expansion = /\b(all humans|everyone worldwide|any species|universal effect)\b/i;
+  if (expansion.test(claimText)) {
+    hints.push("claim-language-expands-population");
+  }
+  if (contract.analysis_class === "exploratory" && /\b(proves|confirms|definitively)\b/i.test(claimText)) {
+    hints.push("exploratory-contract-confirmatory-language");
+  }
+  if (declaration.known_limits.length > 0) {
+    hints.push("declaration-has-acknowledged-limits");
+  }
+  return {
+    machine_hints: hints,
+    needs_human_adjudication: hints.some((h) => h !== "declaration-has-acknowledged-limits")
+  };
 }
