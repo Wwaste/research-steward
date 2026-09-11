@@ -1,127 +1,163 @@
-import { createHash } from "node:crypto";
 import { z } from "zod";
-import { ResearchStewardError, stableJson } from "./utils.js";
+import { IdentifierSchema, type CommittedEvent } from "./protocol.js";
+import { ResearchStewardError } from "./utils.js";
 
 /**
- * Diff-based re-review and finding lifecycle (Task 2.6, module layer).
- * `fixed` requires remediation evidence — never an author's "I fixed it".
+ * Finding lifecycle as a fold over the ledger (DESIGN-EVIDENCE §3).
+ * Module-layer only — finding_transition event types land with protocol ①.
  */
 
-export const FINDING_STATES = [
+export const FINDING_FOLD_STATES = [
+  "reported",
   "open",
   "fixed",
   "accepted_risk",
-  "obsolete",
-  "deferred"
+  "rejected",
+  "deferred",
+  "obsolete"
 ] as const;
 
-export type FindingState = (typeof FINDING_STATES)[number];
+export type FindingFoldState = (typeof FINDING_FOLD_STATES)[number];
 
-export const FindingSchema = z
+export const FindingSnapshotSchema = z
   .object({
-    finding_id: z.string().min(1).max(100),
-    state: z.enum(FINDING_STATES),
-    severity: z.enum(["minor", "important", "critical"]),
-    title: z.string().min(1).max(500),
-    locator: z.string().min(1).max(500).optional(),
-    packet_id: z.string().min(1).max(100),
-    remediation_evidence: z.string().max(2_000).nullable().default(null),
-    adjudicator: z.string().min(1).max(100).nullable().default(null),
-    updated_at: z.string().datetime({ offset: true })
+    finding_event_id: z.string().uuid(),
+    finding_id: IdentifierSchema,
+    reporter_actor_id: IdentifierSchema,
+    severity: z.enum(["critical", "high", "medium", "low", "info"]),
+    claim: z.string().min(1),
+    state: z.enum(FINDING_FOLD_STATES),
+    adjudicator_actor_id: IdentifierSchema.nullable().default(null),
+    remediation_evidence_fingerprints: z.array(z.string().regex(/^[a-f0-9]{64}$/)).default([]),
+    fixed_in_packet_id: z.string().nullable().default(null),
+    expires_at: z.string().datetime({ offset: true }).nullable().default(null),
+    last_transition_event_id: z.string().uuid().nullable().default(null),
+    open_diff_review_id: z.string().nullable().default(null)
   })
   .strict();
 
-export type Finding = z.infer<typeof FindingSchema>;
+export type FindingSnapshot = z.infer<typeof FindingSnapshotSchema>;
 
-export const DiffPacketSchema = z
-  .object({
-    diff_version: z.literal(1),
-    base_packet_id: z.string().min(1).max(100),
-    base_packet_sha256: z.string().regex(/^[a-f0-9]{64}$/),
-    target_packet_id: z.string().min(1).max(100),
-    target_packet_sha256: z.string().regex(/^[a-f0-9]{64}$/),
-    changed_files: z.array(z.string().min(1).max(4_096)).max(500),
-    created_at: z.string().datetime({ offset: true })
-  })
-  .strict();
-
-export type DiffPacket = z.infer<typeof DiffPacketSchema>;
-
-export function diffPacketHash(packet: DiffPacket): string {
-  return createHash("sha256").update(stableJson(packet), "utf8").digest("hex");
-}
-
-const ALLOWED: Record<FindingState, readonly FindingState[]> = {
-  open: ["fixed", "accepted_risk", "obsolete", "deferred"],
+const ALLOWED: Record<FindingFoldState, readonly FindingFoldState[]> = {
+  reported: ["open", "rejected", "deferred"],
+  open: ["fixed", "accepted_risk", "obsolete", "deferred", "open"],
   fixed: ["open", "obsolete"],
   accepted_risk: ["open"],
-  obsolete: [],
-  deferred: ["open"]
+  rejected: [],
+  deferred: ["open"],
+  obsolete: []
 };
 
-export function transitionFinding(
-  finding: Finding,
-  next: FindingState,
-  input: {
-    adjudicator?: string;
-    remediation_evidence?: string;
-    now?: string;
+export function isLegalFindingTransition(from: FindingFoldState, to: FindingFoldState): boolean {
+  return ALLOWED[from].includes(to);
+}
+
+function key(findingEventId: string, findingId: string): string {
+  return `${findingEventId}:${findingId}`;
+}
+
+/**
+ * Fold agent/adjudication findings plus finding_transition events into
+ * snapshots. Illegal orders are ignored here and rejected at append time.
+ */
+export function foldFindings(events: readonly CommittedEvent[]): Map<string, FindingSnapshot> {
+  const map = new Map<string, FindingSnapshot>();
+  for (const event of events) {
+    if (event.type === "agent_contribution" || event.type === "adjudication") {
+      const findings = Array.isArray(event.findings) ? event.findings : [];
+      for (const finding of findings) {
+        if (finding === null || typeof finding !== "object") continue;
+        const f = finding as { id?: unknown; severity?: unknown; claim?: unknown };
+        if (typeof f.id !== "string") continue;
+        const k = key(event.event_id, f.id);
+        if (map.has(k)) continue;
+        map.set(
+          k,
+          FindingSnapshotSchema.parse({
+            finding_event_id: event.event_id,
+            finding_id: f.id,
+            reporter_actor_id: event.actor.id,
+            severity: f.severity ?? "info",
+            claim: typeof f.claim === "string" ? f.claim : "",
+            state: "reported"
+          })
+        );
+      }
+    }
+    if ((event.type as string) === "finding_transition") {
+      const meta = event.metadata as Record<string, unknown>;
+      const findingEventId = meta["finding_event_id"];
+      const findingId = meta["finding_id"];
+      const to = meta["to"];
+      if (
+        typeof findingEventId !== "string" ||
+        typeof findingId !== "string" ||
+        typeof to !== "string"
+      ) {
+        continue;
+      }
+      const k = key(findingEventId, findingId);
+      const existing = map.get(k);
+      if (!existing) continue;
+      if (!isLegalFindingTransition(existing.state, to as FindingFoldState)) continue;
+      const reopen = to === "open" && existing.state !== "reported";
+      map.set(k, {
+        ...existing,
+        state: to as FindingFoldState,
+        adjudicator_actor_id: reopen
+          ? null
+          : event.actor.id,
+        remediation_evidence_fingerprints: reopen
+          ? []
+          : Array.isArray(meta["remediation_evidence_fingerprints"])
+            ? (meta["remediation_evidence_fingerprints"] as string[])
+            : existing.remediation_evidence_fingerprints,
+        fixed_in_packet_id: reopen
+          ? null
+          : typeof meta["fixed_in_packet_id"] === "string"
+            ? (meta["fixed_in_packet_id"] as string)
+            : existing.fixed_in_packet_id,
+        expires_at: reopen
+          ? null
+          : typeof meta["expires_at"] === "string"
+            ? (meta["expires_at"] as string)
+            : existing.expires_at,
+        last_transition_event_id: event.event_id
+      });
+    }
   }
-): Finding {
-  if (!ALLOWED[finding.state].includes(next)) {
+  return map;
+}
+
+export function assertSelfAdjudication(
+  snapshot: FindingSnapshot,
+  adjudicatorActorId: string
+): void {
+  if (snapshot.reporter_actor_id === adjudicatorActorId) {
     throw new ResearchStewardError(
-      "FINDING_INVALID_TRANSITION",
-      `Cannot move finding from ${finding.state} to ${next}.`,
-      { from: finding.state, to: next }
+      "SELF_ADJUDICATION",
+      "A reporter cannot authoritatively adjudicate their own finding.",
+      { finding_id: snapshot.finding_id }
     );
   }
-  if (next === "fixed") {
+}
+
+export function assertFixedRequiresEvidence(snapshot: FindingSnapshot): void {
+  if (snapshot.state === "fixed") {
     if (
-      input.remediation_evidence === undefined ||
-      input.remediation_evidence.trim() === ""
+      snapshot.remediation_evidence_fingerprints.length === 0 ||
+      snapshot.fixed_in_packet_id === null
     ) {
       throw new ResearchStewardError(
         "FINDING_FIXED_REQUIRES_EVIDENCE",
-        "A finding may only be marked fixed with remediation evidence (command, commit, or packet)."
+        "fixed requires remediation evidence fingerprints and a frozen packet id."
       );
     }
   }
-  if (
-    (next === "accepted_risk" || next === "fixed") &&
-    (input.adjudicator === undefined || input.adjudicator.trim() === "")
-  ) {
+  if (snapshot.state === "accepted_risk" && snapshot.expires_at === null) {
     throw new ResearchStewardError(
-      "FINDING_ADJUDICATOR_REQUIRED",
-      "Authoritative disposition requires a named adjudicator."
+      "FINDING_ACCEPTED_RISK_REQUIRES_EXPIRY",
+      "accepted_risk requires expires_at."
     );
   }
-  return FindingSchema.parse({
-    ...finding,
-    state: next,
-    remediation_evidence:
-      input.remediation_evidence ?? finding.remediation_evidence,
-    adjudicator: input.adjudicator ?? finding.adjudicator,
-    updated_at: input.now ?? new Date().toISOString()
-  });
-}
-
-export function openFinding(input: {
-  finding_id: string;
-  severity: Finding["severity"];
-  title: string;
-  packet_id: string;
-  locator?: string;
-  now?: string;
-}): Finding {
-  return FindingSchema.parse({
-    finding_id: input.finding_id,
-    state: "open",
-    severity: input.severity,
-    title: input.title,
-    packet_id: input.packet_id,
-    ...(input.locator === undefined ? {} : { locator: input.locator }),
-    remediation_evidence: null,
-    adjudicator: null,
-    updated_at: input.now ?? new Date().toISOString()
-  });
 }
