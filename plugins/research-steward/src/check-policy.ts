@@ -354,12 +354,29 @@ export async function resolveExecutableInPathDirs(
   }
   const { access, realpath } = await import("node:fs/promises");
   const { constants } = await import("node:fs");
+  const SYSTEM_PREFIXES = ["/bin", "/sbin", "/usr/bin", "/usr/sbin", "/usr/local/bin"];
   for (const dir of policy.path_dirs) {
     const candidate = path.join(dir, name);
     try {
       await access(candidate, constants.X_OK);
-      return await realpath(candidate);
-    } catch {
+      const real = await realpath(candidate);
+      // CR-M-084 P9: resolved binary must remain inside realpath(path_dirs
+      // entry) or a system read-only prefix (symlink out is a hijack).
+      const realDir = await realpath(dir).catch(() => dir);
+      const insideDir = real === realDir || real.startsWith(realDir + path.sep);
+      const insideSystem = SYSTEM_PREFIXES.some(
+        (prefix) => real === prefix || real.startsWith(prefix + path.sep)
+      );
+      if (!insideDir && !insideSystem) {
+        throw new ResearchStewardError(
+          "CHECK_EXECUTABLE_UNRESOLVED",
+          "Resolved executable escaped path_dirs and system prefixes.",
+          { name, real }
+        );
+      }
+      return real;
+    } catch (error) {
+      if (error instanceof ResearchStewardError) throw error;
       // try next
     }
   }

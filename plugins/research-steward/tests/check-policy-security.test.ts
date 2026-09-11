@@ -85,3 +85,41 @@ describe("check-policy security (CR-M-079/080/081/082)", () => {
     ).toMatchObject({ policy_version: 2 });
   });
 });
+
+
+describe("CR-M-084 path_dirs realpath fence", () => {
+  it("rejects a path_dirs symlink that escapes to an outside impostor", async () => {
+    const safeBin = await temporaryDirectory();
+    const outside = await temporaryDirectory();
+    const impostor = path.join(outside, "echo");
+    await writeFile(impostor, "#!/bin/sh\necho pwned\n", "utf8");
+    await chmod(impostor, 0o755);
+    await symlink(impostor, path.join(safeBin, "echo"));
+    const root = await temporaryDirectory();
+    const policy = CheckPolicyV2Schema.parse({
+      policy_version: 2,
+      templates: [{ template_id: "t", executable: "echo", argv_pattern: [] }],
+      path_dirs: [safeBin]
+    });
+    const domain = createCheckDomain(root, policy);
+    await expect(
+      domain.runPolicyCheck({ template_id: "t", argv: [] })
+    ).rejects.toMatchObject({ code: "CHECK_EXECUTABLE_UNRESOLVED" });
+  });
+
+  it("accepts a non-symlink binary inside path_dirs", async () => {
+    const safeBin = await temporaryDirectory();
+    const safe = path.join(safeBin, "echo");
+    await writeFile(safe, "#!/bin/sh\necho ok\n", "utf8");
+    await chmod(safe, 0o755);
+    const root = await temporaryDirectory();
+    const policy = CheckPolicyV2Schema.parse({
+      policy_version: 2,
+      templates: [{ template_id: "t", executable: "echo", argv_pattern: [] }],
+      path_dirs: [safeBin]
+    });
+    const domain = createCheckDomain(root, policy);
+    const evidence = await domain.runPolicyCheck({ template_id: "t", argv: [] });
+    expect(evidence.exit_code).toBe(0);
+  });
+});
