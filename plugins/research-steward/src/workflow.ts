@@ -550,46 +550,49 @@ async function runOneNode(
     const budgetMax =
       plan.limits.budget_max_invocations ??
       plan.nodes.length * (plan.limits.retry_limit + 1);
+    // CR-M-072: budget assert + started append share one failure path so a
+    // throw before spawn cannot leak the held permit slot.
     try {
       // Fake adapter is free and does not consume the paid budget window.
       if (node.adapter !== "fake") {
-        assertBudgetAllowsFromLedger({
+        await assertBudgetAllowsFromLedger({
           events: coordinatorEvents,
           window_start: new Date(Date.now() - budgetWindowMs).toISOString(),
           max_invocations: budgetMax,
           provider: node.adapter,
-          permit_token: permit.token
+          permit_token: permit.token,
+          runtimeRoot
         });
       }
+      // persist-before-spawn (DESIGN-INVOCATION-LEDGER step 4)
+      await appendCoordinatorEvent(root, assertCoordinatorOwned, {
+        type: "invocation_started",
+        run_id: runId,
+        actor: {
+          id: node.actor_id,
+          role: node.role,
+          adapter: node.adapter,
+          ...(node.model ? { model: node.model } : {})
+        },
+        input_hash: packetHash,
+        depends_on: dependencyEvents.map((event) => event.event_id),
+        // Process metadata is never blind scientific content.
+        visibility: "shared",
+        summary: `Invocation started for ${node.id} attempt ${attempts}.`,
+        metadata: {
+          invocation_id: invocationId,
+          run_id: runId,
+          node_id: node.id,
+          attempt: attempts,
+          adapter: node.adapter,
+          ...(node.model ? { model: node.model } : {}),
+          retry_reason: lastRetryDecision?.reason ?? null
+        }
+      });
     } catch (error) {
       await permit.release();
       throw error;
     }
-    // persist-before-spawn (DESIGN-INVOCATION-LEDGER step 4)
-    await appendCoordinatorEvent(root, assertCoordinatorOwned, {
-      type: "invocation_started",
-      run_id: runId,
-      actor: {
-        id: node.actor_id,
-        role: node.role,
-        adapter: node.adapter,
-        ...(node.model ? { model: node.model } : {})
-      },
-      input_hash: packetHash,
-      depends_on: dependencyEvents.map((event) => event.event_id),
-      // Process metadata is never blind scientific content.
-      visibility: "shared",
-      summary: `Invocation started for ${node.id} attempt ${attempts}.`,
-      metadata: {
-        invocation_id: invocationId,
-        run_id: runId,
-        node_id: node.id,
-        attempt: attempts,
-        adapter: node.adapter,
-        ...(node.model ? { model: node.model } : {}),
-        retry_reason: lastRetryDecision?.reason ?? null
-      }
-    });
     let result: Awaited<ReturnType<typeof runProvider>>;
     let processPid: number | undefined;
     try {

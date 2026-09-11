@@ -1,12 +1,12 @@
-import { writeFile } from "node:fs/promises";
+import { readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { appendEvent, freezePacket, readEvents } from "../src/store.js";
 import { runRoundtable } from "../src/workflow.js";
 import { allowsAutoReplay, foldInvocations, makeInvocationId, nextAttempt } from "../src/invocations.js";
 import { initializedProject } from "./helpers.js";
 
-function plan(adapter: "fake" | "kimi" = "fake") {
+function plan(adapter: "fake" | "kimi" = "fake", extraLimits: Record<string, unknown> = {}) {
   return {
     version: 1,
     name: "rb",
@@ -18,7 +18,8 @@ function plan(adapter: "fake" | "kimi" = "fake") {
       max_prompt_chars: 20_000,
       max_output_chars: 10_000,
       retry_limit: 0,
-      max_failures: 1
+      max_failures: 1,
+      ...extraLimits
     },
     nodes: [
       {
@@ -100,5 +101,68 @@ describe("CR-M-072 budget/permit chain in workflow", () => {
     const events = await readEvents(root);
     const started = events.find((e) => e.type === "invocation_started");
     expect(started).toBeDefined();
+  });
+
+  it("releases the permit when invocation_started append fails", async () => {
+    process.env.RESEARCH_STEWARD_ENABLE_FAKE_ADAPTER = "1";
+    const root = await initializedProject("permit-leak");
+    await writeFile(path.join(root, "n.md"), "x\n", "utf8");
+    await freezePacket(root, "pkt-rb", ["n.md"]);
+    const store = await import("../src/store.js");
+    const original = store.appendEvent.bind(store);
+    const spy = vi
+      .spyOn(store, "appendEvent")
+      .mockImplementation(async (projectRoot, draft) => {
+        if ((draft as { type?: string }).type === "invocation_started") {
+          throw new Error("simulated ledger write failure");
+        }
+        return original(projectRoot, draft);
+      });
+    try {
+      await expect(runRoundtable(root, plan("fake"), "permit-leak")).rejects.toThrow(
+        "simulated ledger write failure"
+      );
+    } finally {
+      spy.mockRestore();
+      delete process.env.RESEARCH_STEWARD_ENABLE_FAKE_ADAPTER;
+    }
+    const slots = (
+      await readdir(path.join(root, ".research", "runtime", "permits", "fake"))
+    ).filter((name) => name.startsWith("slot-"));
+    expect(slots).toEqual([]);
+  });
+
+  it("runRoundtable hits BUDGET_EXCEEDED when the paid window is already full", async () => {
+    const root = await initializedProject("budget-e2e");
+    await writeFile(path.join(root, "n.md"), "x\n", "utf8");
+    await freezePacket(root, "pkt-rb", ["n.md"]);
+    // Seed one paid start so used=1 >= budget_max_invocations=1.
+    await appendEvent(root, {
+      type: "invocation_started",
+      run_id: "prior-run",
+      actor: { id: "a0", role: "analyst", adapter: "kimi" },
+      summary: "prior paid start",
+      metadata: {
+        invocation_id: makeInvocationId("prior-run", "n0", 1),
+        run_id: "prior-run",
+        node_id: "n0",
+        attempt: 1,
+        adapter: "kimi"
+      }
+    });
+    const providers = await import("../src/providers.js");
+    const spawn = vi.spyOn(providers, "runProvider");
+    try {
+      await expect(
+        runRoundtable(
+          root,
+          plan("kimi", { budget_max_invocations: 1, budget_window_ms: 3_600_000 }),
+          "budget-run"
+        )
+      ).rejects.toMatchObject({ code: "BUDGET_EXCEEDED" });
+      expect(spawn).not.toHaveBeenCalled();
+    } finally {
+      spawn.mockRestore();
+    }
   });
 });

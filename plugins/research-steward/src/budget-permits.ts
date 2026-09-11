@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   resolvePrivateDestinationInside,
@@ -148,18 +148,64 @@ export function countPaidInvocationsInWindow(
   return n;
 }
 
-export function assertBudgetAllowsFromLedger(input: {
+/**
+ * CR-M-072 binding: the token must equal a live directory-lease owner.json
+ * under runtimeRoot/permits/<provider>/slot-*. Missing runtimeRoot, unreadable
+ * leases, and non-matching tokens all fail closed as PERMIT_TOKEN_MISMATCH.
+ */
+async function liveLeaseHoldsToken(
+  runtimeRoot: string,
+  provider: string,
+  token: string
+): Promise<boolean> {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(provider)) {
+    return false;
+  }
+  const dir = path.join(runtimeRoot, "permits", provider);
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return false;
+  }
+  for (const entry of entries) {
+    if (!entry.startsWith("slot-")) continue;
+    try {
+      const raw = await readFile(path.join(dir, entry, "owner.json"), "utf8");
+      const owner = JSON.parse(raw) as { token?: string };
+      if (owner.token === token) return true;
+    } catch {
+      // slot torn down mid-check — not a held lease
+    }
+  }
+  return false;
+}
+
+export async function assertBudgetAllowsFromLedger(input: {
   events: readonly CommittedEvent[];
   window_start: string;
   max_invocations: number;
   provider: string;
   /** CR-M-072: permit credential proving the caller holds a slot. */
   permit_token?: string;
-}): void {
+  /** Directory that owns permits/<provider>/slot-* leases (required to bind). */
+  runtimeRoot?: string;
+}): Promise<void> {
   if (input.permit_token === undefined || input.permit_token === "") {
     throw new ResearchStewardError(
       "PERMIT_REQUIRED",
       "Budget checks require a held permit token."
+    );
+  }
+  if (
+    input.runtimeRoot === undefined ||
+    input.runtimeRoot === "" ||
+    !(await liveLeaseHoldsToken(input.runtimeRoot, input.provider, input.permit_token))
+  ) {
+    throw new ResearchStewardError(
+      "PERMIT_TOKEN_MISMATCH",
+      "Permit token does not match a live lease for this provider.",
+      { provider: input.provider }
     );
   }
   const used = countPaidInvocationsInWindow(

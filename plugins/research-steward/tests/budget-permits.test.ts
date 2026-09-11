@@ -47,41 +47,10 @@ describe("budget fold from ledger (DESIGN-BUDGET-PERMITS)", () => {
       countPaidInvocationsInWindow(events, "2026-09-11T00:30:00.000Z", ["kimi"])
     ).toBe(1);
   });
-
-  it("assertBudgetAllowsFromLedger fails closed at the cap", () => {
-    const events = [startedEvent("kimi", "2026-09-11T01:00:00.000Z")];
-    expect(() =>
-      assertBudgetAllowsFromLedger({
-        events,
-        window_start: "2026-09-11T00:00:00.000Z",
-        max_invocations: 1,
-        provider: "kimi",
-        permit_token: "tok"
-      })
-    ).toThrowError(expect.objectContaining({ code: "BUDGET_EXCEEDED" }));
-    expect(() =>
-      assertBudgetAllowsFromLedger({
-        events,
-        window_start: "2026-09-11T00:00:00.000Z",
-        max_invocations: 2,
-        provider: "kimi",
-        permit_token: "tok"
-      })
-    ).not.toThrow();
-    expect(() =>
-      assertBudgetAllowsFromLedger({
-        events,
-        window_start: "2026-09-11T00:00:00.000Z",
-        max_invocations: 2,
-        provider: "kimi"
-      })
-    ).toThrowError(expect.objectContaining({ code: "PERMIT_REQUIRED" }));
-  });
 });
 
-
-describe("CR-M-072 remainder", () => {
-  it("PERMIT_REQUIRED when token missing; accepts real permit token", async () => {
+describe("CR-M-072 permit token binding", () => {
+  it("fails closed at the cap with a real held token", async () => {
     const runtimeRoot = await temporaryDirectory();
     const permit = await acquirePermitSlot({
       runtimeRoot,
@@ -89,25 +58,100 @@ describe("CR-M-072 remainder", () => {
       maxConcurrent: 2
     });
     try {
-      expect(() =>
+      const events = [startedEvent("kimi", "2026-09-11T01:00:00.000Z")];
+      await expect(
         assertBudgetAllowsFromLedger({
-          events: [],
-          window_start: "2000-01-01T00:00:00.000Z",
-          max_invocations: 5,
-          provider: "kimi"
+          events,
+          window_start: "2026-09-11T00:00:00.000Z",
+          max_invocations: 1,
+          provider: "kimi",
+          permit_token: permit.token,
+          runtimeRoot
         })
-      ).toThrowError(expect.objectContaining({ code: "PERMIT_REQUIRED" }));
-      expect(() =>
+      ).rejects.toMatchObject({ code: "BUDGET_EXCEEDED" });
+      await expect(
+        assertBudgetAllowsFromLedger({
+          events,
+          window_start: "2026-09-11T00:00:00.000Z",
+          max_invocations: 2,
+          provider: "kimi",
+          permit_token: permit.token,
+          runtimeRoot
+        })
+      ).resolves.toBeUndefined();
+      await expect(
+        assertBudgetAllowsFromLedger({
+          events,
+          window_start: "2026-09-11T00:00:00.000Z",
+          max_invocations: 2,
+          provider: "kimi",
+          runtimeRoot
+        })
+      ).rejects.toMatchObject({ code: "PERMIT_REQUIRED" });
+    } finally {
+      await permit.release();
+    }
+  });
+
+  it("rejects garbage tokens and missing runtimeRoot as PERMIT_TOKEN_MISMATCH", async () => {
+    const runtimeRoot = await temporaryDirectory();
+    const permit = await acquirePermitSlot({
+      runtimeRoot,
+      provider: "kimi",
+      maxConcurrent: 2
+    });
+    try {
+      await expect(
         assertBudgetAllowsFromLedger({
           events: [],
           window_start: "2000-01-01T00:00:00.000Z",
           max_invocations: 5,
           provider: "kimi",
-          permit_token: permit.token
+          permit_token: "garbage-not-a-lease",
+          runtimeRoot
         })
-      ).not.toThrow();
+      ).rejects.toMatchObject({ code: "PERMIT_TOKEN_MISMATCH" });
+      await expect(
+        assertBudgetAllowsFromLedger({
+          events: [],
+          window_start: "2000-01-01T00:00:00.000Z",
+          max_invocations: 5,
+          provider: "kimi",
+          permit_token: "tok"
+        })
+      ).rejects.toMatchObject({ code: "PERMIT_TOKEN_MISMATCH" });
+      await expect(
+        assertBudgetAllowsFromLedger({
+          events: [],
+          window_start: "2000-01-01T00:00:00.000Z",
+          max_invocations: 5,
+          provider: "kimi",
+          permit_token: permit.token,
+          runtimeRoot
+        })
+      ).resolves.toBeUndefined();
     } finally {
       await permit.release();
     }
+  });
+
+  it("released lease no longer authenticates its former token", async () => {
+    const runtimeRoot = await temporaryDirectory();
+    const permit = await acquirePermitSlot({
+      runtimeRoot,
+      provider: "kimi",
+      maxConcurrent: 1
+    });
+    await permit.release();
+    await expect(
+      assertBudgetAllowsFromLedger({
+        events: [],
+        window_start: "2000-01-01T00:00:00.000Z",
+        max_invocations: 5,
+        provider: "kimi",
+        permit_token: permit.token,
+        runtimeRoot
+      })
+    ).rejects.toMatchObject({ code: "PERMIT_TOKEN_MISMATCH" });
   });
 });
