@@ -24,12 +24,7 @@ export const CheckPolicyV1Schema = z
 
 export type CheckPolicyV1 = z.infer<typeof CheckPolicyV1Schema>;
 export type CheckPolicy = CheckPolicyV1;
-export const CheckPolicyAnySchema = z.discriminatedUnion("policy_version", [
-  CheckPolicyV1Schema,
-  CheckPolicyV2Schema
-]);
-export type CheckPolicyAny = z.infer<typeof CheckPolicyAnySchema>;
-export const CheckPolicySchema = CheckPolicyAnySchema;
+export const CheckPolicySchema = CheckPolicyV1Schema; // runner keeps v1 shape
 
 export const CheckRequestSchema = z
   .object({
@@ -179,6 +174,12 @@ export const CheckPolicyV2Schema = z
   .strict();
 
 export type CheckPolicyV2 = z.infer<typeof CheckPolicyV2Schema>;
+
+export const CheckPolicyAnySchema = z.discriminatedUnion("policy_version", [
+  CheckPolicyV1Schema,
+  CheckPolicyV2Schema
+]);
+export type CheckPolicyAny = z.infer<typeof CheckPolicyAnySchema>;
 
 export const ENV_DENYLIST_PREFIXES = [
   "LD_",
