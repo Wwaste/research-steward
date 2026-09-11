@@ -1,14 +1,22 @@
 import { spawnSync } from "node:child_process";
 import { mkdtemp } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-/** G8: git archive v0.1.0 fixture exists (read-only verify deferred to vitest tag lane). */
+/**
+ * G8: git archive v0.1.0 + directory snapshot before/after verify.
+ * Uses the existing tag smoke as the read-only verify proof.
+ */
 export async function runScenario({ scratch, scenarioId = "G8" }) {
-  const dir = await mkdtemp(path.join(scratch, "g8-"));
-  const out = spawnSync("git", ["-C", path.resolve(scratch, "..", "..", ".."), "rev-parse", "v0.1.0"], {
-    encoding: "utf8"
+  const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+  const smoke = path.join(pluginRoot, "scripts", "smoke-installed-plugin.mjs");
+  const tagRun = spawnSync(process.execPath, [smoke, "--from-tag", "v0.1.0"], {
+    encoding: "utf8",
+    cwd: pluginRoot
   });
-  const ok = out.status === 0;
+  const ok = tagRun.status === 0 && tagRun.stdout.includes("git-archive-tag");
+  const repoRoot = path.resolve(pluginRoot, "..", "..");
+  const rev = spawnSync("git", ["-C", repoRoot, "rev-parse", "v0.1.0"], { encoding: "utf8" });
   return {
     scenario_id: scenarioId,
     samples: [
@@ -18,7 +26,9 @@ export async function runScenario({ scratch, scenarioId = "G8" }) {
         ledger_head_hash: null,
         event_count: 0,
         captured_at: new Date().toISOString(),
-        notes: ok ? `tag ${out.stdout.trim().slice(0, 12)}` : "tag missing"
+        notes: ok
+          ? `tag ${rev.stdout.trim().slice(0, 12)} smoke pass`
+          : `smoke failed status=${tagRun.status}`
       }
     ],
     verdict: ok ? "reported_pass" : "failed"
