@@ -141,3 +141,18 @@ describe("CR-M-085 PATH denylist", () => {
     );
   });
 });
+
+
+describe("CR-M-082 wiring", () => {
+  it("createCheckDomainFromPolicy accepts v2 and rejects v1", async () => {
+    const { createCheckDomainFromPolicy } = await import("../src/check-domain.js");
+    const v2 = createCheckDomainFromPolicy(await temporaryDirectory(), {
+      policy_version: 2,
+      templates: [{ template_id: "t", executable: "/bin/true", argv_pattern: [] }]
+    });
+    expect(v2.policy_version).toBe(2);
+    expect(() =>
+      createCheckDomainFromPolicy("/tmp", { policy_version: 1, allowlist: ["/bin/true"] })
+    ).toThrowError(expect.objectContaining({ code: "CHECK_POLICY_VERSION_UNSUPPORTED" }));
+  });
+});

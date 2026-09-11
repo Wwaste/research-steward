@@ -6,7 +6,7 @@ import {
   type CommandTemplate
 } from "./command-policy.js";
 import { prepareAndRunCheck } from "./check-runner.js";
-import { resolveExecutableInPathDirs } from "./check-policy.js";
+import { loadCheckPolicy, resolveExecutableInPathDirs } from "./check-policy.js";
 import { ResearchStewardError, sha256Text, stableJson } from "./utils.js";
 
 /**
@@ -58,6 +58,24 @@ function commandLineHash(input: {
       env_overrides: input.env_overrides
     })
   );
+}
+
+/**
+ * CR-M-082: production entry — accept any parsed v1/v2 policy document.
+ * v1 is rejected for the template domain (allowlist has no templates).
+ */
+export function createCheckDomainFromPolicy(
+  projectRoot: string,
+  rawPolicy: unknown
+): CheckPolicyV2 {
+  const any = loadCheckPolicy(rawPolicy);
+  if (any.policy_version !== 2) {
+    throw new ResearchStewardError(
+      "CHECK_POLICY_VERSION_UNSUPPORTED",
+      "Command domain requires policy_version 2 (templates)."
+    );
+  }
+  return any;
 }
 
 export function createCheckDomain(
