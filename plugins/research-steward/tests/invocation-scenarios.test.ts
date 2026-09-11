@@ -248,10 +248,10 @@ describe("CR-M-060 residual scenarios (narrowed per #22)", () => {
         (e) =>
           e.type === "invocation_unknown" && e.metadata["invocation_id"] === invId
       );
-      // Exactly one lease holder may append the unknown marker.
-      expect(unknownEvents.length).toBeLessThanOrEqual(1);
-      const rejected = results.filter((r) => r.status === "rejected");
-      expect(rejected.length + results.length).toBe(2);
+      // Lease holder only: at most one unknown marker for this invocation.
+      expect(unknownEvents.length).toBe(1);
+      // At least one of the two resumes must have lost the lease race.
+      expect(results.some((r) => r.status === "rejected")).toBe(true);
     } finally {
       delete process.env.RESEARCH_STEWARD_ENABLE_FAKE_ADAPTER;
     }
