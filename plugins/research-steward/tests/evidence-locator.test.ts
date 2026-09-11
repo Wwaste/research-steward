@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertNoPathEscape,
   evidenceFingerprint,
+  hashFileLineRange,
   parseEvidenceLocator,
   tryUpgradeFreeText,
   upgradeOrKeepFreeText
@@ -82,5 +83,53 @@ describe("evidence locators (Task 3.2)", () => {
     const b = parseEvidenceLocator({ kind: "doi", doi: "10.1234/xyz123" });
     expect(evidenceFingerprint(a)).toBe(evidenceFingerprint(b));
     expect(evidenceFingerprint(a)).toMatch(/^[a-f0-9]{64}$/);
+  });
+});
+
+
+describe("CR-M-065 evidence acceptance tests", () => {
+  it("fingerprint is key-order independent (would fail JSON.stringify)", () => {
+    const a = {
+      kind: "dataset_record" as const,
+      dataset_id: "ds",
+      record_key: "k1",
+      snapshot_sha256: "a".repeat(64)
+    };
+    const b = {
+      snapshot_sha256: "a".repeat(64),
+      record_key: "k1",
+      dataset_id: "ds",
+      kind: "dataset_record" as const
+    };
+    expect(evidenceFingerprint(a as never)).toBe(evidenceFingerprint(b as never));
+  });
+
+  it("hashFileLineRange: CRLF is not normalized", () => {
+    const crlf = Buffer.from("a\r\nb\r\n", "utf8");
+    const lf = Buffer.from("a\nb\n", "utf8");
+    expect(hashFileLineRange(crlf, 1, 2)).not.toBe(hashFileLineRange(lf, 1, 2));
+  });
+
+  it("hashFileLineRange: last line without LF", () => {
+    const buf = Buffer.from("one\ntwo", "utf8");
+    expect(hashFileLineRange(buf, 2, 2)).toMatch(/^[a-f0-9]{64}$/);
+    // different from line 2 with trailing LF
+    const withLf = Buffer.from("one\ntwo\n", "utf8");
+    expect(hashFileLineRange(buf, 2, 2)).not.toBe(hashFileLineRange(withLf, 2, 2));
+  });
+
+  it("hashFileLineRange: binary without LF is one line", () => {
+    const bin = Buffer.from([0x00, 0x01, 0xff, 0xfe]);
+    expect(hashFileLineRange(bin, 1, 1)).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("hashFileLineRange: out-of-range is fail-closed", () => {
+    const buf = Buffer.from("only\n", "utf8");
+    expect(() => hashFileLineRange(buf, 2, 2)).toThrowError(
+      expect.objectContaining({ code: "EVIDENCE_LINE_RANGE_INVALID" })
+    );
+    expect(() => hashFileLineRange(buf, 0, 1)).toThrowError(
+      expect.objectContaining({ code: "EVIDENCE_LINE_RANGE_INVALID" })
+    );
   });
 });
