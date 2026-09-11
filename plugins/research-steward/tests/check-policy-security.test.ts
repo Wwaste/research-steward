@@ -36,7 +36,8 @@ describe("check-policy security (CR-M-079/080/081/082)", () => {
       // marker must not exist: evil PATH entry never executed
       const { readFile } = await import("node:fs/promises");
       await expect(readFile(marker, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-      expect(evidence.executable).toContain("echo");
+      const { realpath } = await import("node:fs/promises");
+      expect(evidence.executable).toBe(await realpath(safe));
       expect(path.isAbsolute(evidence.executable)).toBe(true);
     } finally {
       if (prevPath === undefined) delete process.env.PATH;
@@ -46,7 +47,8 @@ describe("check-policy security (CR-M-079/080/081/082)", () => {
 
   it("rejects a dangling symlink path argument regardless of target existence (CR-M-080)", async () => {
     const root = await temporaryDirectory();
-    const outside = path.join(root, "..", "no-such-target-080");
+    const managed = await temporaryDirectory();
+    const outside = path.join(managed, "no-such-target-080");
     const link = path.join(root, "link.txt");
     await symlink(outside, link);
     expect(matchArgPattern({ kind: "path", within: "project_root" }, "link.txt", root)).toBe(false);
